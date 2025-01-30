@@ -53,11 +53,11 @@ class PatientImplantController extends Controller
             // 'secret_key' => 'nullable|exists:implants,secret_key',
 
             'secret_key' => [
-        'nullable',
-        Rule::exists('implants', 'secret_key')->where(function ($query) use ($request) {
-            $query->where('ipg_serial_number', $request->ipg_serial_number);
-        }),
-    ],
+                'nullable',
+                Rule::exists('implants', 'secret_key')->where(function ($query) use ($request) {
+                    $query->where('ipg_serial_number', $request->ipg_serial_number);
+                }),
+            ],
 
             // Conditional validation based on pre_feb_2022
             'ipg_model_number' => 'required_if:pre_feb_2022,1|string|nullable',
@@ -77,7 +77,8 @@ class PatientImplantController extends Controller
         try {
             // Update patient information
             $user->update([
-                'patient_photo' => $request->file('patient_photo')->store('patient_photos', 'public'),
+                'patient_photo' => $request->file('patient_photo'),
+                // ->store('patient_photos', 'public'),
                 'name' => $request->name,
                 'date_of_birth' => $request->date_of_birth,
                 'gender' => $request->gender,
@@ -120,16 +121,16 @@ class PatientImplantController extends Controller
                     'warranty_expired_at' => Carbon::parse($request->implantation_date)->addMonths(3)
                 ];
 
-                // Store documents if provided
-                if ($request->hasFile('patient_id_card')) {
-                    $implantData['patient_id_card'] = $request->file('patient_id_card')->store('patient_documents', 'public');
-                }
-                if ($request->hasFile('warranty_card')) {
-                    $implantData['warranty_card'] = $request->file('warranty_card')->store('patient_documents', 'public');
-                }
-                if ($request->hasFile('interrogation_report')) {
-                    $implantData['interrogation_report'] = $request->file('interrogation_report')->store('patient_documents', 'public');
-                }
+                // // Store documents if provided
+                // if ($request->hasFile('patient_id_card')) {
+                //     $implantData['patient_id_card'] = $request->file('patient_id_card')->store('patient_documents', 'public');
+                // }
+                // if ($request->hasFile('warranty_card')) {
+                //     $implantData['warranty_card'] = $request->file('warranty_card')->store('patient_documents', 'public');
+                // }
+                // if ($request->hasFile('interrogation_report')) {
+                //     $implantData['interrogation_report'] = $request->file('interrogation_report')->store('patient_documents', 'public');
+                // }
 
                 $implant = $user->implant()->create($implantData);
                 $message = 'Patient and implant information saved successfully';
@@ -137,7 +138,7 @@ class PatientImplantController extends Controller
                 // Handle post-Feb 2022 implant linking
                 $existingImplant = Implant::where('ipg_serial_number', $request->ipg_serial_number)->first();
 
-               
+
 
                 if (!$existingImplant) {
                     // Create new implant record
@@ -149,7 +150,7 @@ class PatientImplantController extends Controller
                         'implantation_date' => now(),
                         'warranty_expired_at' => now()->addMonths(3)
                     ]);
-                    
+
                     $message = 'New implant registered successfully';
                     return response()->json([
                         'message' => $message,
@@ -344,7 +345,7 @@ class PatientImplantController extends Controller
     // }
 
 
-  
+
     public function submitByEngineer(Request $request)
     {
         $validated = $request->validate([
@@ -397,7 +398,7 @@ class PatientImplantController extends Controller
                 $secretKey = Str::random(16);
                 $implantData['secret_key'] = $secretKey;
                 $implantData['ipg_serial_number'] = $validated['ipg_serial_number'];
-                
+
                 $implant = Implant::create($implantData);
                 $message = 'Implant details registered successfully';
             } else {
@@ -421,7 +422,7 @@ class PatientImplantController extends Controller
         }
     }
 
-    
+
     public function getEngineerImplants(Request $request)
     {
         try {
@@ -433,14 +434,14 @@ class PatientImplantController extends Controller
                     'ipg_serial_number',
                     'hospital_name',
                     'doctor_name',
-                   
-                   
+
+
                 ]);
-    
+
             return response()->json([
                 'implants' => $implants
             ], 200);
-    
+
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Error retrieving implant details',
@@ -451,135 +452,135 @@ class PatientImplantController extends Controller
 
 
     public function getWarrantyStatus(Request $request)
-{
-    $user = $request->user();
-    $implant = $user->implant;
-
-    if (!$implant) {
-        return response()->json(['message' => 'Implant not found.'], 404);
-    }
-
-    $warrantyExpiration = $implant->warranty_expired_at;
-    $isExpired = now()->greaterThan($warrantyExpiration);
-
-    return response()->json([
-        'warranty_expiration_date' => $warrantyExpiration,
-        'is_expired' => $isExpired,
-    ]);
-}
-    
-
-    public function requestReplacement(Request $request)
-{
-    try {
-        $patient = $request->user();
-        $implant = $patient->implant;
+    {
+        $user = $request->user();
+        $implant = $user->implant;
 
         if (!$implant) {
-            return response()->json(['message' => 'No implant found'], 404);
+            return response()->json(['message' => 'Implant not found.'], 404);
         }
 
-        // Check existing request
-        $pendingRequest = DeviceReplacement::where('patient_id', $patient->id)
-            ->whereIn('status', ['pending', 'approved'])
-            ->first();
-
-        if ($pendingRequest) {
-            return response()->json([
-                'message' => 'Active replacement request exists',
-                'request' => $pendingRequest
-            ], 400);
-        }
-
-        // Check warranty
-        $isWarranty = !now()->greaterThan($implant->warranty_expired_at);
-
-        // Base validation
-        $validationRules = [
-            'state' => 'required|string',
-            'hospital_name' => 'required|string',
-            'doctor_name' => 'required|string',
-            'channel_partner' => 'required|string',
-        ];
-
-        // Warranty validation
-        if ($isWarranty) {
-            $validationRules += [
-                'replacement_reason' => 'required|string',
-                'planned_replacement_date' => 'required|date|after:today',
-                'interrogation_report' => 'required|file|max:2048',
-                'prescription' => 'required|file|max:2048'
-            ];
-        }
-
-        $validated = $request->validate($validationRules);
-
-        $replacementData = [
-            'patient_id' => $patient->id,
-            'implant_id' => $implant->id,
-            'state' => $validated['state'],
-            'hospital_name' => $validated['hospital_name'],
-            'doctor_name' => $validated['doctor_name'],
-            'channel_partner' => $validated['channel_partner']
-        ];
-
-        if ($isWarranty) {
-            $replacementData += [
-                'replacement_reason' => $validated['replacement_reason'],
-                'planned_replacement_date' => $validated['planned_replacement_date'],
-                'interrogation_report_path' => $request->file('interrogation_report')->store('reports'),
-                'prescription_path' => $request->file('prescription')->store('prescriptions')
-            ];
-        } else {
-            $replacementData += [
-                'status' => 'approved'
-            ];
-        }
-
-        $replacement = DeviceReplacement::create($replacementData);
+        $warrantyExpiration = $implant->warranty_expired_at;
+        $isExpired = now()->greaterThan($warrantyExpiration);
 
         return response()->json([
-            'message' => 'Replacement request submitted',
-            'data' => $replacement
-        ], 201);
-
-    } catch (\Exception $e) {
-        return response()->json(['message' => $e->getMessage()], 500);
+            'warranty_expiration_date' => $warrantyExpiration,
+            'is_expired' => $isExpired,
+        ]);
     }
+
+
+    public function requestReplacement(Request $request)
+    {
+        try {
+            $patient = $request->user();
+            $implant = $patient->implant;
+
+            if (!$implant) {
+                return response()->json(['message' => 'No implant found'], 404);
+            }
+
+            // Check existing request
+            $pendingRequest = DeviceReplacement::where('patient_id', $patient->id)
+                ->whereIn('status', ['pending', 'approved'])
+                ->first();
+
+            if ($pendingRequest) {
+                return response()->json([
+                    'message' => 'Active replacement request exists',
+                    'request' => $pendingRequest
+                ], 400);
+            }
+
+            // Check warranty
+            $isWarranty = !now()->greaterThan($implant->warranty_expired_at);
+
+            // Base validation
+            $validationRules = [
+                'state' => 'required|string',
+                'hospital_name' => 'required|string',
+                'doctor_name' => 'required|string',
+                'channel_partner' => 'required|string',
+            ];
+
+            // Warranty validation
+            if ($isWarranty) {
+                $validationRules += [
+                    'replacement_reason' => 'required|string',
+                    'planned_replacement_date' => 'required|date|after:today',
+                    'interrogation_report' => 'required|file|max:2048',
+                    'prescription' => 'required|file|max:2048'
+                ];
+            }
+
+            $validated = $request->validate($validationRules);
+
+            $replacementData = [
+                'patient_id' => $patient->id,
+                'implant_id' => $implant->id,
+                'state' => $validated['state'],
+                'hospital_name' => $validated['hospital_name'],
+                'doctor_name' => $validated['doctor_name'],
+                'channel_partner' => $validated['channel_partner']
+            ];
+
+            if ($isWarranty) {
+                $replacementData += [
+                    'replacement_reason' => $validated['replacement_reason'],
+                    'planned_replacement_date' => $validated['planned_replacement_date'],
+                    'interrogation_report_path' => $request->file('interrogation_report')->store('reports'),
+                    'prescription_path' => $request->file('prescription')->store('prescriptions')
+                ];
+            } else {
+                $replacementData += [
+                    'status' => 'approved'
+                ];
+            }
+
+            $replacement = DeviceReplacement::create($replacementData);
+
+            return response()->json([
+                'message' => 'Replacement request submitted',
+                'data' => $replacement
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
     }
 
     public function getReplacementStatus(Request $request)
-{
-    try {
-        $patient = $request->user();
-        $replacementRequest = DeviceReplacement::where('patient_id', $patient->id)
-            ->latest()
-            ->first();
+    {
+        try {
+            $patient = $request->user();
+            $replacementRequest = DeviceReplacement::where('patient_id', $patient->id)
+                ->latest()
+                ->first();
 
-        if (!$replacementRequest) {
+            if (!$replacementRequest) {
+                return response()->json([
+                    'message' => 'No replacement request found',
+                    'status' => null
+                ], 404);
+            }
+
             return response()->json([
-                'message' => 'No replacement request found',
-                'status' => null
-            ], 404);
+                'message' => 'Replacement request status retrieved successfully',
+                'data' => [
+                    'status' => $replacementRequest->status,
+                    'submitted_at' => $replacementRequest->created_at,
+                    'rejection_reason' => $replacementRequest->rejection_reason,
+                    'service_charge' => $replacementRequest->service_charge,
+                    'planned_replacement_date' => $replacementRequest->planned_replacement_date
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving replacement request status',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        return response()->json([
-            'message' => 'Replacement request status retrieved successfully',
-            'data' => [
-                'status' => $replacementRequest->status,
-                'submitted_at' => $replacementRequest->created_at,
-                'rejection_reason' => $replacementRequest->rejection_reason,
-                'service_charge' => $replacementRequest->service_charge,
-                'planned_replacement_date' => $replacementRequest->planned_replacement_date
-            ]
-        ], 200);
-
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => 'Error retrieving replacement request status',
-            'error' => $e->getMessage()
-        ], 500);
-    }
     }
 
 
