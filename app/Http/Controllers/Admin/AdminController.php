@@ -83,6 +83,47 @@ class AdminController extends Controller
             ], 500);
         }
     }
+    public function listEmployees()
+    {
+        try {
+            // Get all users with their roles
+            $employees = User::with('roles')
+                ->whereHas('roles', function($q) {
+                    // Exclude users with only 'user' role
+                    $q->where('name', '!=', 'user');
+                })
+                ->get()
+                ->map(function($user) {
+                    return [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'roles' => $user->getRoleNames(),
+                        // 'created_at' => $user->created_at,
+                        'password' => $user->password,
+                        // 'is_service_engineer' => $user->roles->contains('name', 'sales-representative')
+                    ];
+                });
+    
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Employees retrieved successfully',
+                'data' => $employees
+            ], 200);
+    
+        } catch (\Exception $e) {
+            Log::error('Error retrieving employees', [
+                'error' => $e->getMessage(),
+                'admin_id' => auth()->id()
+            ]);
+    
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Error retrieving employees',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
 
 }

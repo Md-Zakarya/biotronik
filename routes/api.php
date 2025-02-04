@@ -70,8 +70,8 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     
     // Add new employee management routes
     Route::post('/admin/add-employee', [AdminController::class, 'addEmployee']);
-    // Route::get('/admin/employees', [AdminController::class, 'listEmployees']);
-    // Route::get('/admin/roles', [AdminController::class, 'listRoles']);
+    Route::get('/admin/employees', [AdminController::class, 'listEmployees']);
+   
 });
 
 
