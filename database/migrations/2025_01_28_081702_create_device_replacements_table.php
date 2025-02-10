@@ -24,6 +24,8 @@ class CreateDeviceReplacementsTable extends Migration
             $table->date('planned_replacement_date')->nullable();
             $table->string('interrogation_report_path')->nullable();
             $table->string('prescription_path')->nullable();
+            $table->foreignId('service_engineer_id')->nullable()->unique()->constrained('users');
+
             
             // Service charge
             $table->decimal('service_charge', 10, 2)->nullable();

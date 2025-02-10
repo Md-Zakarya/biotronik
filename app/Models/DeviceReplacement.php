@@ -6,13 +6,16 @@ use Illuminate\Database\Eloquent\Model;
 use App\Models\Patient;
 use App\Models\Implant;
 
-class DeviceReplacement extends Model 
+class DeviceReplacement extends Model
 {
+    const STATUS_PENDING = 'pending';
+    const STATUS_APPROVED = 'approved';
+    const STATUS_REJECTED = 'rejected';
     protected $fillable = [
         'patient_id',
         'implant_id',
         'state',
-        'hospital_name', 
+        'hospital_name',
         'doctor_name',
         'channel_partner',
         'replacement_reason',
@@ -21,7 +24,8 @@ class DeviceReplacement extends Model
         'prescription_path',
         'service_charge',
         'status',
-        'rejection_reason'
+        'rejection_reason',
+        'service_engineer_id',
     ];
 
     protected $casts = [
@@ -31,12 +35,16 @@ class DeviceReplacement extends Model
 
 
     public function patient()
-{
-    return $this->belongsTo(Patient::class);
-}
+    {
+        return $this->belongsTo(Patient::class);
+    }
 
-public function implant()
-{
-    return $this->belongsTo(Implant::class);
-}
+    public function implant()
+    {
+        return $this->belongsTo(Implant::class);
+    }
+    public function serviceEngineer()
+    {
+        return $this->belongsTo(User::class, 'service_engineer_id');
+    }
 }

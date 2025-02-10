@@ -10,6 +10,8 @@ use App\Http\Controllers\Admin\AdminAuthController;
 use App\Http\Controllers\Admin\AdminController;
 
 use App\Http\Controllers\Admin\TicketController;
+use App\Http\Controllers\Admin\DistController;
+
 
 
 use App\Http\Controllers\PatientAuth\PatientAuthController;
@@ -48,6 +50,9 @@ Route::middleware(['auth:sanctum', 'role:sales-representative'])->group(function
 
     Route::post('/service-engineer/new-implant', [PatientImplantController::class, 'submitByEngineer']);
     Route::get('/service-engineer/implant-list', [PatientImplantController::class, 'getEngineerImplants']);
+    Route::post('/service-engineer/implant-replacement', [PatientImplantController::class, 'submitReplacement']);
+    Route::get('/service-engineer/get-implant-details/{ipg_serial_number}', [PatientImplantController::class, 'getPatientDetailsByIpg']);
+
 });
 
 
@@ -71,6 +76,15 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     // Add new employee management routes
     Route::post('/admin/add-employee', [AdminController::class, 'addEmployee']);
     Route::get('/admin/employees', [AdminController::class, 'listEmployees']);
+
+    route::get('/admin/distributors', [DistController::class, 'listRequests']); 
+    Route::get('/admin/distributors/sales-representatives', [DistController::class, 'listSalesRepresentatives']);   
+    Route::post('/admin/distributors/assign-engineer', [DistController::class, 'assignServiceEngineer']);   
+    Route::get('/admin/distributors/replacement/{id}', [DistController::class, 'getReplacementDetails']); 
+
+    Route::post('/admin/distributors/replacement/assign-ipg-serial', [DistController::class, 'assignNewIpgSerialNumber']);
+
+
    
 });
 
@@ -88,6 +102,11 @@ Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarr
     Route::post('/patient/replacement-request', [PatientImplantController::class, 'requestReplacement']);
 
     Route::get('/patient/replacement-request/status', [PatientImplantController::class, 'getReplacementStatus']);
+
+
+
+
+    
 });
 
 
