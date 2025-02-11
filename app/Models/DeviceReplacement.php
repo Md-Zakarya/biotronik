@@ -26,6 +26,8 @@ class DeviceReplacement extends Model
         'status',
         'rejection_reason',
         'service_engineer_id',
+        'service_completed',
+        
     ];
 
     protected $casts = [

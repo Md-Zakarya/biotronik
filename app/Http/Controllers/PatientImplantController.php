@@ -34,7 +34,7 @@ class PatientImplantController extends Controller
             'state' => 'required|string',
             'city' => 'required|string',
             'pin_code' => 'required|string',
-            'patient_photo' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048',
+            // 'patient_photo' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048',
 
             // Relative information
             'relative_name' => 'required|string|max:255',
@@ -514,8 +514,8 @@ class PatientImplantController extends Controller
                 $validationRules += [
                     'replacement_reason' => 'required|string',
                     'planned_replacement_date' => 'required|date|after:today',
-                    'interrogation_report' => 'required|file|max:2048',
-                    'prescription' => 'required|file|max:2048'
+                    // 'interrogation_report' => 'required|file|max:2048',
+                    // 'prescription' => 'required|file|max:2048'
                 ];
             }
 
@@ -611,17 +611,13 @@ class PatientImplantController extends Controller
             'ipg_model' => 'required|string',
             'ipg_model_number' => 'required|string'
         ]);
-
+    
         try {
+            \DB::beginTransaction();
+            
             // Find the existing implant record
             $implant = Implant::where('ipg_serial_number', $validated['new_ipg_serial_number'])->first();
-
-            if (!$implant) {
-                return response()->json([
-                    'message' => 'No implant found with provided IPG serial number'
-                ], 404);
-            }
-
+    
             // Update the implant record with new information
             $implant->update([
                 'state' => $validated['state'],
@@ -635,13 +631,47 @@ class PatientImplantController extends Controller
                 'warranty_expired_at' => Carbon::parse($validated['implantation_date'])->addMonths(3),
                 'user_id' => $request->user()->id
             ]);
-
+    
+            // Find and update the related device replacement record
+            $replacementRequest = DeviceReplacement::where('new_ipg_serial_number', $validated['new_ipg_serial_number'])
+                ->where('status', 'approved')
+                ->where('service_completed', false)
+                ->latest()
+                ->first();
+                
+    
+                if ($replacementRequest) {
+                    // Log before updating
+                    \Log::info('Device replacement service completion initiated', [
+                        'replacement_id' => $replacementRequest->id,
+                        'patient_id' => $replacementRequest->patient_id,
+                      
+                        'new_ipg_serial' => $replacementRequest->new_ipg_serial_number,
+                        'engineer_id' => $request->user()->id
+                    ]);
+                
+                    $replacementRequest->update([
+                        'service_completed' => true
+                    ]);
+                
+                    // Log after successful update
+                    \Log::info('Device replacement service completed successfully', [
+                        'replacement_id' => $replacementRequest->id,
+                      
+                        'engineer_id' => $request->user()->id
+                    ]);
+                } 
+            \DB::commit();
+    
             return response()->json([
                 'message' => 'Implant information updated successfully',
-                'data' => $implant
+                'data' => $implant,
+                'replacement_updated' => $replacementRequest ? true : false
             ], 200);
-
+    
         } catch (\Exception $e) {
+            \DB::rollBack();
+            
             return response()->json([
                 'message' => 'Error updating implant information',
                 'error' => $e->getMessage()

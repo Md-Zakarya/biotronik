@@ -77,17 +77,24 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::post('/admin/add-employee', [AdminController::class, 'addEmployee']);
     Route::get('/admin/employees', [AdminController::class, 'listEmployees']);
 
-    route::get('/admin/distributors', [DistController::class, 'listRequests']); 
-    Route::get('/admin/distributors/sales-representatives', [DistController::class, 'listSalesRepresentatives']);   
-    Route::post('/admin/distributors/assign-engineer', [DistController::class, 'assignServiceEngineer']);   
-    Route::get('/admin/distributors/replacement/{id}', [DistController::class, 'getReplacementDetails']); 
+    // route::get('/admin/distributors', [DistController::class, 'listRequests']); 
+    // Route::get('/admin/distributors/sales-representatives', [DistController::class, 'listSalesRepresentatives']);   
+    // Route::post('/admin/distributors/assign-engineer', [DistController::class, 'assignServiceEngineer']);   
+    // Route::get('/admin/distributors/replacement/{id}', [DistController::class, 'getReplacementDetails']); 
 
-    Route::post('/admin/distributors/replacement/assign-ipg-serial', [DistController::class, 'assignNewIpgSerialNumber']);
+    // Route::post('/admin/distributors/replacement/assign-ipg-serial', [DistController::class, 'assignNewIpgSerialNumber']);
 
 
    
 });
 
+Route::middleware(['auth:sanctum', 'role:distributor'])->group(function () {
+    Route::get('/admin/distributors', [DistController::class, 'listRequests']); 
+    Route::get('/admin/distributors/sales-representatives', [DistController::class, 'listSalesRepresentatives']);   
+    Route::post('/admin/distributors/assign-engineer', [DistController::class, 'assignServiceEngineer']);   
+    Route::get('/admin/distributors/replacement/{id}', [DistController::class, 'getReplacementDetails']); 
+    Route::post('/admin/distributors/replacement/assign-ipg-serial', [DistController::class, 'assignNewIpgSerialNumber']);
+});
 
 
 

@@ -19,6 +19,7 @@ class CreateDeviceReplacementsTable extends Migration
             $table->string('doctor_name');
             $table->string('channel_partner');
             
+            $table->string('new_ipg_serial_number')->nullable();
             // Warranty fields
             $table->text('replacement_reason')->nullable();
             $table->date('planned_replacement_date')->nullable();
@@ -32,6 +33,8 @@ class CreateDeviceReplacementsTable extends Migration
             
             // Status
             $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
+            $table->boolean('service_completed')->default(false);
+
             $table->text('rejection_reason')->nullable();
             $table->timestamps();
         });
