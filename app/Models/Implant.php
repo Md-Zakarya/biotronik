@@ -55,4 +55,8 @@ class Implant extends Model
     {
         return $this->belongsTo(Patient::class);
     }
+    public function ipgSerialHistories()
+    {
+        return $this->hasMany(IpgSerialHistory::class);
+    }
 }
