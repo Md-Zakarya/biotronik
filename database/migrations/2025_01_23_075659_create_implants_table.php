@@ -29,6 +29,7 @@ class CreateImplantsTable extends Migration
             $table->string('ipg_model_number')->nullable();
             $table->string('ipg_serial_number');
         
+            
             $table->boolean('has_ra_rv_lead')->nullable();
             $table->boolean('has_extra_lead')->nullable();
 
@@ -55,6 +56,15 @@ class CreateImplantsTable extends Migration
             // New Implant Details
             $table->string('secret_key')->nullable();
             // $table->string('IPG_Serial_Number')->nullable();
+
+
+            //these fields may are may not be kept in future and hence are 
+            //kep to continue the flow 
+            $table->string('lead_brand')->nullable();
+            $table->string('rv_lead_model')->nullable();
+            $table->string('rv_lead_serial')->nullable();
+            $table->string('csp_lead_brand')->nullable();
+            $table->boolean('is_csp_implant')->default(false);
             
             $table->timestamps();
         });

@@ -10,70 +10,73 @@ use Illuminate\Validation\Rule;
 
 class DistController extends Controller
 {
-    // public function listRequests(Request $request)
-    // {
-    //     try {
-    //         $requests = DeviceReplacement::with(['patient', 'implant'])
-    //             ->get()
-    //             ->map(function ($request) {
-    //                 return [
-    //                     'id' => $request->id,
-    //                     'patient_name' => $request->patient->name,
-    //                     'hospital_name' => $request->hospital_name,
-    //                     'ticket_type' => $request->replacement_reason ? 'Warranty Replacement' : 'Paid Replacement',
-    //                     'status' => ucfirst($request->status), // Capitalizes first letter: pending -> Pending
-    //                     'service_engineer' => $request->serviceEngineer ? $request->serviceEngineer->name : null
-    //                 ];
-    //             });
+    public function listAllPendingRequests(Request $request)
+    {
+        try {
+            $requests = DeviceReplacement::with(['patient', 'implant', 'serviceEngineer'])
+                ->where('status', DeviceReplacement::STATUS_APPROVED)
+                ->whereNull('new_ipg_serial_number')
+                ->get();
 
-    //         return response()->json([
-    //             'message' => 'Device replacement requests retrieved successfully',
-    //             'data' => $requests
-    //         ], 200);
-    //     } catch (\Exception $e) {
-    //         return response()->json([
-    //             'message' => 'Error retrieving device replacement requests',
-    //             'error' => $e->getMessage()
-    //         ], 500);
-    //     }
-    // }
+            if ($requests->isEmpty()) {
+                return response()->json([
+                    'message' => 'No pending requests found',
+                    'data' => []
+                ], 200);
+            }
 
-    public function listRequests(Request $request) 
-{
-    try {
-        $requests = DeviceReplacement::with(['patient', 'implant', 'serviceEngineer'])
-            ->where('status', 'approved') // Add this filter
-            ->get()
-            ->map(function ($replacement) {
-                // Determine display status for approved requests
-                $status = 'approved';
-                if (empty($replacement->new_ipg_serial_number)) {
-                    $status = 'pending';
-                } else {
-                    $status = $replacement->service_completed ? 'registered' : 'linked';
-                }
-
-                return [
-                    'id' => $replacement->id,
-                    'patient_name' => $replacement->patient->name,
-                    'hospital_name' => $replacement->hospital_name,
-                    'ticket_type' => $replacement->replacement_reason ? 'Warranty Replacement' : 'Paid Replacement',
-                    'status' => ucfirst($status),
-                    'service_engineer' => $replacement->serviceEngineer ? $replacement->serviceEngineer->name : null,
-                ];
-            });
-
-        return response()->json([
-            'message' => 'Approved device replacement requests retrieved successfully',
-            'data' => $requests
-        ], 200);
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => 'Error retrieving approved replacement requests',
-            'error' => $e->getMessage(),
-        ], 500);
+            return [
+                'id' => $requests->first()->id,
+                'patient_name' => $requests->first()->patient->name,
+                'hospital_name' => $requests->first()->hospital_name,
+                'ticket_type' => $requests->first->replacement_reason ? 'Warranty Replacement' : 'Paid Replacement',
+                'status' => DeviceReplacement::STATUS_PENDING,
+                'service_engineer' => $requests->first()->serviceEngineer ? $requests->first()->serviceEngineer->name : null,
+            ];
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving approved replacement requests',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
-}
+
+    public function listRequests(Request $request)
+    {
+        try {
+            $requests = DeviceReplacement::with(['patient', 'implant', 'serviceEngineer'])
+                ->where('status', 'approved') // Add this filter
+                ->get()
+                ->map(function ($replacement) {
+                    // Determine display status for approved requests
+                    $status = 'approved';
+                    if (empty($replacement->new_ipg_serial_number)) {
+                        $status = 'pending';
+                    } else {
+                        $status = $replacement->service_completed ? 'registered' : 'linked';
+                    }
+
+                    return [
+                        'id' => $replacement->id,
+                        'patient_name' => $replacement->patient->name,
+                        'hospital_name' => $replacement->hospital_name,
+                        'ticket_type' => $replacement->replacement_reason ? 'Warranty Replacement' : 'Paid Replacement',
+                        'status' => ucfirst($status),
+                        'service_engineer' => $replacement->serviceEngineer ? $replacement->serviceEngineer->name : null,
+                    ];
+                });
+
+            return response()->json([
+                'message' => 'Approved device replacement requests retrieved successfully',
+                'data' => $requests
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving approved replacement requests',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 
 
     public function listSalesRepresentatives()
@@ -106,17 +109,17 @@ class DistController extends Controller
             $validated = $request->validate([
                 'replacement_request_id' => 'required|exists:device_replacements,id',
                 'service_engineer_id' => [
-                    'required',
-                    'exists:users,id',
-                    Rule::exists('model_has_roles', 'model_id')
-                        ->where(function ($query) {
-                            $query->where('role_id', function ($subQuery) {
-                                $subQuery->select('id')
-                                    ->from('roles')
-                                    ->where('name', 'sales-representative');
-                            });
-                        })
-                ]
+                        'required',
+                        'exists:users,id',
+                        Rule::exists('model_has_roles', 'model_id')
+                            ->where(function ($query) {
+                                $query->where('role_id', function ($subQuery) {
+                                    $subQuery->select('id')
+                                        ->from('roles')
+                                        ->where('name', 'sales-representative');
+                                });
+                            })
+                    ]
             ]);
 
             // Check if service engineer is already assigned to another request
@@ -197,11 +200,11 @@ class DistController extends Controller
             $validated = $request->validate([
                 'replacement_request_id' => 'required|exists:device_replacements,id',
                 'new_ipg_serial_number' => [
-                    'required',
-                    'string',
+                        'required',
+                        'string',
 
-                    Rule::unique('implants', 'ipg_serial_number'),
-                ]
+                        Rule::unique('implants', 'ipg_serial_number'),
+                    ]
             ]);
 
             // Retrieve the replacement with its implant

@@ -35,6 +35,13 @@ class Implant extends Model
         'user_id',
         'is_service_engineer',
         'warranty_expired_at',
+
+        //could be temporary fields
+        'lead_brand',
+        'rv_lead_model',
+        'rv_lead_serial',
+        'csp_lead_brand',
+        'is_csp_implant'
         
     ];
 
@@ -55,8 +62,5 @@ class Implant extends Model
     {
         return $this->belongsTo(Patient::class);
     }
-    public function ipgSerialHistories()
-    {
-        return $this->hasMany(IpgSerialHistory::class);
-    }
+   
 }

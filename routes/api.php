@@ -12,6 +12,8 @@ use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\TicketController;
 use App\Http\Controllers\Admin\DistController;
 
+use App\Http\Controllers\SE\ImplantController;
+
 
 
 use App\Http\Controllers\PatientAuth\PatientAuthController;
@@ -53,6 +55,9 @@ Route::middleware(['auth:sanctum', 'role:sales-representative'])->group(function
     Route::post('/service-engineer/implant-replacement', [PatientImplantController::class, 'submitReplacement']);
     Route::get('/service-engineer/get-implant-details/{ipg_serial_number}', [PatientImplantController::class, 'getPatientDetailsByIpg']);
 
+
+    Route::post('/service-engineer/upgrade-implant', [ImplantController::class, 'upgradeImplant']);
+    
 });
 
 
@@ -94,6 +99,8 @@ Route::middleware(['auth:sanctum', 'role:distributor'])->group(function () {
     Route::post('/admin/distributors/assign-engineer', [DistController::class, 'assignServiceEngineer']);   
     Route::get('/admin/distributors/replacement/{id}', [DistController::class, 'getReplacementDetails']); 
     Route::post('/admin/distributors/replacement/assign-ipg-serial', [DistController::class, 'assignNewIpgSerialNumber']);
+
+    Route::get('/admin/distributors/pending-replacement-requests', [DistController::class, 'listAllPendingRequests']);
 });
 
 
@@ -109,8 +116,10 @@ Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarr
     Route::post('/patient/replacement-request', [PatientImplantController::class, 'requestReplacement']);
 
     Route::get('/patient/replacement-request/status', [PatientImplantController::class, 'getReplacementStatus']);
+    
 
-
+    Route::post('/patient/upgrade-implant', [PatientImplantController::class, 'linkPatientToImplant']);
+    
 
 
     
