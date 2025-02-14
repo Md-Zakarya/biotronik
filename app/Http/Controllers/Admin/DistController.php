@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\DeviceReplacement;
 use App\Models\User;
+use App\Models\FollowUpRequest;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -109,30 +110,30 @@ class DistController extends Controller
             $validated = $request->validate([
                 'replacement_request_id' => 'required|exists:device_replacements,id',
                 'service_engineer_id' => [
-                        'required',
-                        'exists:users,id',
-                        Rule::exists('model_has_roles', 'model_id')
-                            ->where(function ($query) {
-                                $query->where('role_id', function ($subQuery) {
-                                    $subQuery->select('id')
-                                        ->from('roles')
-                                        ->where('name', 'sales-representative');
-                                });
-                            })
-                    ]
+                    'required',
+                    'exists:users,id',
+                    Rule::exists('model_has_roles', 'model_id')
+                        ->where(function ($query) {
+                            $query->where('role_id', function ($subQuery) {
+                                $subQuery->select('id')
+                                    ->from('roles')
+                                    ->where('name', 'sales-representative');
+                            });
+                        })
+                ]
             ]);
 
             // Check if service engineer is already assigned to another request
-            $existingAssignment = DeviceReplacement::where('service_engineer_id', $validated['service_engineer_id'])
-                ->where('id', '!=', $validated['replacement_request_id'])
-                ->first();
+            // $existingAssignment = DeviceReplacement::where('service_engineer_id', $validated['service_engineer_id'])
+            //     ->where('id', '!=', $validated['replacement_request_id'])
+            //     ->first();
 
-            if ($existingAssignment) {
-                return response()->json([
-                    'message' => 'Service engineer is already assigned to another replacement request',
-                    'current_assignment' => $existingAssignment->id
-                ], 400);
-            }
+            // if ($existingAssignment) {
+            //     return response()->json([
+            //         'message' => 'Service engineer is already assigned to another replacement request',
+            //         'current_assignment' => $existingAssignment->id
+            //     ], 400);
+            // }
 
             $replacementRequest = DeviceReplacement::find($validated['replacement_request_id']);
             $replacementRequest->service_engineer_id = $validated['service_engineer_id'];
@@ -200,11 +201,11 @@ class DistController extends Controller
             $validated = $request->validate([
                 'replacement_request_id' => 'required|exists:device_replacements,id',
                 'new_ipg_serial_number' => [
-                        'required',
-                        'string',
+                    'required',
+                    'string',
 
-                        Rule::unique('implants', 'ipg_serial_number'),
-                    ]
+                    Rule::unique('implants', 'ipg_serial_number'),
+                ]
             ]);
 
             // Retrieve the replacement with its implant
@@ -270,6 +271,71 @@ class DistController extends Controller
             ], 500);
         }
     }
+
+    public function getAllActionables()
+{
+    try {
+        // Get pending replacement requests with timestamps
+        $replacementRequests = DeviceReplacement::with(['patient', 'implant', 'serviceEngineer'])
+            ->where('status', DeviceReplacement::STATUS_APPROVED)
+            ->whereNull('new_ipg_serial_number')
+            ->get()
+            ->map(function ($request) {
+                return [
+                    'id' => $request->id,
+                    'request_type' => 'replacement',
+                    'patient_name' => $request->patient->name,
+                    'hospital_name' => $request->hospital_name,
+                    'ticket_type' => $request->replacement_reason ? 'Warranty Replacement' : 'Paid Replacement',
+                    'status' => 'Pending',
+                    'service_engineer' => $request->serviceEngineer ? $request->serviceEngineer->name : null,
+                    'created_at' => $request->created_at->toDateTimeString() // Ensure consistent date format
+                ];
+            });
+
+        // Get pending follow-up requests with timestamps
+        $followUpRequests = FollowUpRequest::with(['patient'])
+            ->where('status', FollowUpRequest::STATUS_PENDING)
+            ->get()
+            ->map(function ($request) {
+                return [
+                    'id' => $request->id,
+                    'request_type' => 'follow-up',
+                    'patient_name' => $request->patient->name,
+                    'hospital_name' => $request->hospital_name,
+                    'ticket_type' => 'Follow-up Service',
+                    'status' => 'Pending',
+                    'service_engineer' => null,
+                    'created_at' => $request->created_at->toDateTimeString() // Ensure consistent date format
+                ];
+            });
+
+        // Convert both collections to arrays and merge them
+        $allRequests = array_merge($replacementRequests->toArray(), $followUpRequests->toArray());
+
+        // Sort the merged array by created_at
+        usort($allRequests, function($a, $b) {
+            return strtotime($b['created_at']) - strtotime($a['created_at']);
+        });
+
+        return response()->json([
+            'message' => 'Actionable requests retrieved successfully',
+            'data' => [
+                'total_actionables' => count($allRequests),
+                'replacement_requests' => $replacementRequests->count(),
+                'follow_up_requests' => $followUpRequests->count(),
+                'requests' => $allRequests
+            ]
+        ], 200);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Error retrieving actionable requests',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
 
 
 }

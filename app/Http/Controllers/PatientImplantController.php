@@ -12,7 +12,25 @@ use Illuminate\Validation\Rule;
 
 class PatientImplantController extends Controller
 {
+    public function getUserDetails(Request $request)
+    {
+        $user = $request->user();
 
+        return response()->json([
+            'name' => $user->name,
+            'email' => $user->email,
+            'phone_number' => $user->phone_number,
+        ], 200);
+    }
+    public function checkIfPatientHasImplant(Request $request)
+    {
+        $user = $request->user();
+        $hasImplant = $user->implant()->exists();
+
+        return response()->json([
+            'has_implant' => $hasImplant
+        ], 200);
+    }
 
     public function store(Request $request)
     {
@@ -796,41 +814,41 @@ class PatientImplantController extends Controller
             'ipg_serial_number' => 'required|string|exists:implants,ipg_serial_number',
             'secret_key' => 'required|string'
         ]);
-    
+
         try {
             // Get authenticated patient's ID
             $patientId = $request->user()->id;
-    
+
             // Find the implant with matching IPG serial and secret key
             $implant = Implant::where('ipg_serial_number', $validated['ipg_serial_number'])
                 ->where('secret_key', $validated['secret_key'])
                 ->first();
-    
+
             if (!$implant) {
                 return response()->json([
                     'message' => 'Invalid IPG serial number or secret key'
                 ], 404);
             }
-    
+
             // Check if implant is already linked to a patient
             if ($implant->patient_id) {
                 return response()->json([
                     'message' => 'This implant is already linked to a patient'
                 ], 400);
             }
-    
+
             // Begin transaction
             \DB::beginTransaction();
             try {
                 // Deactivate ALL existing implants for this patient
                 Implant::where('patient_id', $patientId)
                     ->update(['active' => false]);
-    
+
                 // Find the most recent active implant to copy fields from
                 $oldImplant = Implant::where('patient_id', $patientId)
                     ->latest()
                     ->first();
-    
+
                 if ($oldImplant) {
                     // Fields to copy from old implant
                     $fieldsToCopy = [
@@ -841,7 +859,7 @@ class PatientImplantController extends Controller
                         'warranty_card',
                         'interrogation_report'
                     ];
-    
+
                     // Copy fields from old implant to new implant
                     foreach ($fieldsToCopy as $field) {
                         if (isset($oldImplant->$field)) {
@@ -849,15 +867,15 @@ class PatientImplantController extends Controller
                         }
                     }
                 }
-    
+
                 // Link new implant to patient and set it as active
                 $implant->update([
                     'patient_id' => $patientId,
                     'active' => true
                 ]);
-    
+
                 \DB::commit();
-    
+
                 return response()->json([
                     'message' => 'Implant linked to patient successfully',
                     'data' => [
@@ -865,12 +883,12 @@ class PatientImplantController extends Controller
                         'previous_implants_deactivated' => $oldImplant ? true : false
                     ]
                 ], 200);
-    
+
             } catch (\Exception $e) {
                 \DB::rollBack();
                 throw $e;
             }
-    
+
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Error linking implant to patient',
