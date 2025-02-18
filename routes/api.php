@@ -153,11 +153,20 @@ Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarr
     
     //          FOLLOW UP ROUTES
     Route::post('/patient/payment-details', [FollowUpController::class, 'submitPaymentDetails']);
+
+    //payment done or not? how many request does the patient have that the patient has paid for? 
+    Route::get('/patient/payment-history', [FollowUpController::class, 'getPatientPaymentHistory']);
+
+
     Route::post('/patient/follow-up-request', [FollowUpController::class, 'createFollowUpRequest']);
     Route::get('/patient/follow-up-status', [FollowUpController::class, 'getFollowUpStatus']);
     Route::get('/patient/get-user-details', [PatientImplantController::class, 'getUserDetails']);
     Route::get('/patient/has-implant', [PatientImplantController::class, 'checkIfPatientHasImplant']);
     Route::delete('/patient/follow-up-request', [FollowUpController::class, 'deleteFollowUpRequest']);
+
+
+
+    
 
     
 });

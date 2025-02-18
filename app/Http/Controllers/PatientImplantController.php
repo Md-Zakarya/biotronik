@@ -531,7 +531,8 @@ class PatientImplantController extends Controller
             if ($isWarranty) {
                 $validationRules += [
                     'replacement_reason' => 'required|string',
-                    'planned_replacement_date' => 'required|date|after:today',
+                    // 'planned_replacement_date' => 'required|date|after:today',
+                    'planned_replacement_date' => 'required|date_format:Y-m-d H:i:s|after:now',
                     // 'interrogation_report' => 'required|file|max:2048',
                     // 'prescription' => 'required|file|max:2048'
                 ];
@@ -627,7 +628,7 @@ class PatientImplantController extends Controller
             'device_name' => 'required|string',
             'implantation_date' => 'required|date',
             'ipg_model' => 'required|string',
-            'ipg_model_number' => 'required|string'
+            // 'ipg_model_number' => 'required|string'
         ]);
 
         try {
@@ -645,7 +646,7 @@ class PatientImplantController extends Controller
                 'device_name' => $validated['device_name'],
                 'implantation_date' => $validated['implantation_date'],
                 'ipg_model' => $validated['ipg_model'],
-                'ipg_model_number' => $validated['ipg_model_number'],
+                // 'ipg_model_number' => $validated['ipg_model_number'],
                 'warranty_expired_at' => Carbon::parse($validated['implantation_date'])->addMonths(3),
                 'user_id' => $request->user()->id
             ]);

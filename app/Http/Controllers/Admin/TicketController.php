@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\DeviceReplacement;
 use Illuminate\Http\Request;
+use Carbon\Carbon;
 
 class TicketController extends Controller
 {
@@ -101,7 +102,7 @@ class TicketController extends Controller
                 'doctor_name' => $replacement->doctor_name,              // Changed from implant->doctor_name
                 'channel_partner' => $replacement->channel_partner,       // Changed from implant->channel_partner
                 'reason_for_replacement' => $replacement->replacement_reason,
-                'planned_replacement_schedule' => $replacement->planned_replacement_date,
+                'planned_replacement_schedule' => Carbon::parse($replacement->planned_replacement_date)->format('Y-m-d H:i:s'),
                 'interrogation_report' => $replacement->interrogation_report_path,
                 'physician_report' => $replacement->prescription_path,
                 'ipg_model_number' => $replacement->implant->ipg_model_number,

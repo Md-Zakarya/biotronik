@@ -16,20 +16,20 @@ class FollowUpController extends Controller
             // Get authenticated user and their ID
             $user = $request->user();
             $patientId = $user->id;
-    
+
             // Find and delete the latest follow-up request for the authenticated patient
             $followUpRequest = FollowUpRequest::where('patient_id', $patientId)
                 ->latest()  // Orders by created_at in descending order
                 ->first();
-    
+
             if (!$followUpRequest) {
                 return response()->json([
                     'message' => 'No active follow-up request found'
                 ], 404);
             }
-    
+
             $followUpRequest->delete();
-    
+
             return response()->json([
                 'message' => 'Follow-up request deleted successfully'
             ], 200);
@@ -75,83 +75,83 @@ class FollowUpController extends Controller
     }
 
     public function createFollowUpRequest(Request $request)
-{
-    try {
-        $patient = $request->user();
+    {
+        try {
+            $patient = $request->user();
 
-        // Check for existing active request (pending or approved)
-        $activeRequest = FollowUpRequest::where('patient_id', $patient->id)
-            ->whereIn('status', [FollowUpRequest::STATUS_PENDING, FollowUpRequest::STATUS_APPROVED])
-            ->first();
+            // Check for existing active request (pending or approved)
+            $activeRequest = FollowUpRequest::where('patient_id', $patient->id)
+                ->whereIn('status', [FollowUpRequest::STATUS_PENDING, FollowUpRequest::STATUS_APPROVED])
+                ->first();
 
-        if ($activeRequest) {
+            if ($activeRequest) {
+                return response()->json([
+                    'message' => 'An active follow-up request already exists',
+                    'follow_up_id' => $activeRequest->follow_up_id
+                ], 400);
+            }
+
+            // First verify patient has valid payment and get payment ID
+            $payment = Payment::where('patient_id', $patient->id)
+                ->where('payment_type', 'follow_up')
+                ->where('payment_status', 'completed')
+                ->latest()
+                ->first();
+
+            if (!$payment) {
+                return response()->json([
+                    'message' => 'Payment required before creating follow-up request'
+                ], 403);
+            }
+
+            $validated = $request->validate([
+                'state' => 'required|string',
+                'hospital_name' => 'required|string',
+                'doctor_name' => 'required|string',
+                'channel_partner' => 'required|string',
+                'accompanying_person_name' => 'required|string',
+                'accompanying_person_phone' => 'required|string',
+                'appointment_date' => 'required|date|after:today',
+                'appointment_time' => 'required',
+                'reason' => 'required|string'
+            ]);
+
+            // Get latest rejected request if exists
+            $lastRejectedRequest = FollowUpRequest::where('patient_id', $patient->id)
+                ->where('status', FollowUpRequest::STATUS_REJECTED)
+                ->latest()
+                ->first();
+
+            $requestData = [
+                'patient_id' => $patient->id,
+                'payment_id' => $payment->id,
+                'status' => FollowUpRequest::STATUS_PENDING,
+                ...$validated
+            ];
+
+            if ($lastRejectedRequest) {
+                // Update the rejected request instead of creating new one
+                $lastRejectedRequest->update($requestData);
+                $followUpRequest = $lastRejectedRequest->fresh();
+                $message = 'Follow-up request resubmitted successfully';
+            } else {
+                // Create new request if no rejected request exists
+                $followUpRequest = FollowUpRequest::create($requestData);
+                $message = 'Follow-up request created successfully';
+            }
+
             return response()->json([
-                'message' => 'An active follow-up request already exists',
-                'follow_up_id' => $activeRequest->follow_up_id
-            ], 400);
-        }
+                'message' => $message,
+                'follow_up_id' => $followUpRequest->follow_up_id
+            ]);
 
-        // First verify patient has valid payment and get payment ID
-        $payment = Payment::where('patient_id', $patient->id)
-            ->where('payment_type', 'follow_up')
-            ->where('payment_status', 'completed')
-            ->latest()
-            ->first();
-
-        if (!$payment) {
+        } catch (\Exception $e) {
             return response()->json([
-                'message' => 'Payment required before creating follow-up request'
-            ], 403);
+                'message' => 'Error creating follow-up request',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        $validated = $request->validate([
-            'state' => 'required|string',
-            'hospital_name' => 'required|string',
-            'doctor_name' => 'required|string',
-            'channel_partner' => 'required|string',
-            'accompanying_person_name' => 'required|string',
-            'accompanying_person_phone' => 'required|string',
-            'appointment_date' => 'required|date|after:today',
-            'appointment_time' => 'required',
-            'reason' => 'required|string'
-        ]);
-
-        // Get latest rejected request if exists
-        $lastRejectedRequest = FollowUpRequest::where('patient_id', $patient->id)
-            ->where('status', FollowUpRequest::STATUS_REJECTED)
-            ->latest()
-            ->first();
-
-        $requestData = [
-            'patient_id' => $patient->id,
-            'payment_id' => $payment->id,
-            'status' => FollowUpRequest::STATUS_PENDING,
-            ...$validated
-        ];
-
-        if ($lastRejectedRequest) {
-            // Update the rejected request instead of creating new one
-            $lastRejectedRequest->update($requestData);
-            $followUpRequest = $lastRejectedRequest->fresh();
-            $message = 'Follow-up request resubmitted successfully';
-        } else {
-            // Create new request if no rejected request exists
-            $followUpRequest = FollowUpRequest::create($requestData);
-            $message = 'Follow-up request created successfully';
-        }
-
-        return response()->json([
-            'message' => $message,
-            'follow_up_id' => $followUpRequest->follow_up_id
-        ]);
-
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => 'Error creating follow-up request',
-            'error' => $e->getMessage()
-        ], 500);
     }
-}
     public function getFollowUpStatus(Request $request)
     {
         $user = $request->user();
@@ -198,4 +198,52 @@ class FollowUpController extends Controller
         ], 200);
     }
 
+    public function getPatientPaymentHistory(Request $request)
+    {
+        try {
+            $patientId = $request->user()->id;
+
+            $payments = Payment::where('patient_id', $patientId)
+                ->orderBy('payment_date', 'desc')
+                ->get();
+
+            // If no payments found
+            if ($payments->isEmpty()) {
+                return response()->json([
+                    'message' => 'No follow up request available',
+                    'data' => [
+                        'payment_frequency' => 0,
+                        'payments' => [],
+                        'paidOrNot' => 0
+                    ]
+                ], 200);
+            }
+
+            // Count frequency of payments by payment_type
+            $paymentFrequency = $payments->groupBy('payment_type')
+                ->map(function ($group) {
+                    return [
+                        'count' => $group->count(),
+                        'total_amount' => $group->sum('amount')
+                    ];
+                });
+
+            return response()->json([
+                'message' => 'Payment history retrieved successfully',
+                'data' => [
+                    'payment_frequency' => [
+                        'total_payments' => $payments->count(),
+                        'breakdown' => $paymentFrequency,
+                        'paidOrNot' => 1
+                    ]
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving payment history',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }
