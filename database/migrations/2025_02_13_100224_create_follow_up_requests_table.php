@@ -19,8 +19,9 @@ return new class extends Migration
             $table->string('channel_partner');
             $table->string('accompanying_person_name');
             $table->string('accompanying_person_phone');
-            $table->date('appointment_date');
-            $table->time('appointment_time');
+            // $table->date('appointment_date');
+            // $table->time('appointment_time');
+            $table->datetime('appointment_datetime');
             $table->text('reason');
             $table->string('status');
             $table->text('rejection_reason')->nullable();

@@ -27,8 +27,8 @@ class FollowUpController extends Controller
                 'follow_up_details' => [
                     'hospital_name' => $followUp->hospital_name,
                     'doctor_name' => $followUp->doctor_name,
-                    'appointment_date' => $followUp->appointment_date,
-                    'appointment_time' => $followUp->appointment_time,
+                    'appointment_datetime' => $followUp->appointment_datetime,
+
                     'reason' => $followUp->reason,
                     'state' => $followUp->state,
                     'channel_partner' => $followUp->channel_partner,

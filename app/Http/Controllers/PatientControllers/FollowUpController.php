@@ -111,8 +111,7 @@ class FollowUpController extends Controller
                 'channel_partner' => 'required|string',
                 'accompanying_person_name' => 'required|string',
                 'accompanying_person_phone' => 'required|string',
-                'appointment_date' => 'required|date|after:today',
-                'appointment_time' => 'required',
+                'appointment_datetime' => 'required|date_format:Y-m-d H:i:s|after:now',
                 'reason' => 'required|string'
             ]);
 
@@ -183,8 +182,9 @@ class FollowUpController extends Controller
                 'follow_up_id' => $followUp->follow_up_id,
                 'purchase' => $payment->payment_date,
                 'validity' => \Carbon\Carbon::parse($payment->payment_date)->addDays(15), // 15 days after purchase date
-                'appointment_date' => $followUp->appointment_date,
-                'appointment_time' => $followUp->appointment_time,
+                //'appointment_date' => $followUp->appointment_date,
+                //'appointment_time' => $followUp->appointment_time,
+                'appointment_datetime' => $followUp->appointment_datetime->format('Y-m-d H:i:s'),
                 'reason' => $followUp->reason,
                 'channel_partner' => $followUp->channel_partner,
                 'accompanying_person_name' => $followUp->accompanying_person_name,

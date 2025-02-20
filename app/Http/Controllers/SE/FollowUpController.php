@@ -61,8 +61,10 @@ class FollowUpController extends Controller
                 'data' => [
                     // Appointment Details
                     'appointment_details' => [
-                        'appointment_date' => $followUpRequest->appointment_date,
-                        'appointment_time' => $followUpRequest->appointment_time,
+                        // 'appointment_date' => $followUpRequest->appointment_date,
+                        // 'appointment_time' => $followUpRequest->appointment_time,
+
+                        'appointment_datetime' => $followUpRequest->appointment_datetime,
                         'reason' => $followUpRequest->reason,
                         'status' => $followUpRequest->status
                     ],

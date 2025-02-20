@@ -90,6 +90,8 @@ class PatientImplantController extends Controller
             'patient_id_card' => 'required_if:pre_feb_2022,1|file|nullable',
             'warranty_card' => 'required_if:pre_feb_2022,1|file|nullable',
             'interrogation_report' => 'required_if:pre_feb_2022,1|file|nullable',
+            // 'csp_lead_model' => 'nullable|string',
+            // 'csp_lead_serial' => 'nullable|string',
         ]);
 
         try {
@@ -401,13 +403,13 @@ class PatientImplantController extends Controller
                 'warranty_expired_at' => Carbon::parse($validated['implantation_date'])->addMonths(3),
                 'ipg_model' => $validated['ipg_model'],
                 'ipg_model_number' => $validated['ipg_model_number'],
-                'ra_rv_lead_model' => $validated['ra_rv_lead_model'],
-                'ra_rv_lead_serial' => $validated['ra_rv_lead_serial'],
-                'has_ra_rv_lead' => $validated['has_ra_rv_lead'],
-                'csp_catheter_model' => $validated['csp_catheter_model'],
-                'has_extra_lead' => $validated['has_extra_lead'],
-                'csp_lead_model' => $validated['csp_lead_model'],
-                'csp_lead_serial' => $validated['csp_lead_serial'],
+                'ra_rv_lead_model' => $validated['ra_rv_lead_model'] ?? null,
+                'ra_rv_lead_serial' => $validated['ra_rv_lead_serial'] ?? null,
+                'has_ra_rv_lead' => $validated['has_ra_rv_lead'] ?? null,
+                'csp_catheter_model' => $validated['csp_catheter_model'] ?? null,
+                'has_extra_lead' => $validated['has_extra_lead'] ?? null,
+                'csp_lead_model' => $validated['csp_lead_model'] ?? null,
+                'csp_lead_serial' => $validated['csp_lead_serial'] ?? null,
                 'user_id' => $user->id
             ];
 

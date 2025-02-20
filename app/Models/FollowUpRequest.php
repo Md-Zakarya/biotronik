@@ -21,8 +21,9 @@ class FollowUpRequest extends Model
         'channel_partner',
         'accompanying_person_name',
         'accompanying_person_phone',
-        'appointment_date',
-        'appointment_time',
+        // 'appointment_date',
+        'appointment_datetime',
+        // 'appointment_time',
         'reason',
         'status',
         'rejection_reason',
@@ -32,8 +33,9 @@ class FollowUpRequest extends Model
     ];
 
     protected $casts = [
-        'appointment_date' => 'date',
-        'appointment_time' => 'datetime',
+        // 'appointment_date' => 'date',
+        // 'appointment_time' => 'datetime',
+         'appointment_datetime' => 'datetime'
 
     ];
 
