@@ -31,7 +31,7 @@ class DeviceReplacement extends Model
     ];
 
     protected $casts = [
-        'planned_replacement_date' => 'date',
+        'planned_replacement_date' => 'datetime',
         'service_charge' => 'decimal:2'
     ];
 

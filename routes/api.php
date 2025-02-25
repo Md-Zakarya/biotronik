@@ -12,6 +12,14 @@ use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\TicketController;
 use App\Http\Controllers\Admin\DistController;
 
+use App\Http\Controllers\SE\ImplantController;
+
+use App\Http\Controllers\PatientControllers\FollowUpController;
+
+use App\Http\Controllers\Dist\FollowUpController as DistFollowUpController;
+use App\Http\Controllers\SE\FollowUpController as SEFollowUpController;
+
+
 
 
 use App\Http\Controllers\PatientAuth\PatientAuthController;
@@ -53,6 +61,19 @@ Route::middleware(['auth:sanctum', 'role:sales-representative'])->group(function
     Route::post('/service-engineer/implant-replacement', [PatientImplantController::class, 'submitReplacement']);
     Route::get('/service-engineer/get-implant-details/{ipg_serial_number}', [PatientImplantController::class, 'getPatientDetailsByIpg']);
 
+
+    Route::post('/service-engineer/upgrade-implant', [ImplantController::class, 'upgradeImplant']);
+
+    Route::get('/service-engineer/follow-up-requests', [SEFollowUpController::class, 'getFollowUpRequests']);
+    Route::get('/service-engineer/follow-up-requests/{id}', [SEFollowUpController::class, 'getFollowUpStatus']);
+    Route::post('/service-engineer/follow-up-requests/{id}/complete', [SEFollowUpController::class, 'markAsComplete']);
+
+    
+
+    Route::post('/service-engineer/follow-up-requests', [SEFollowUpController::class, 'createFollowUpRequest']);
+    
+    Route::get('/service-engineer/patient-details/{phone_number}', [SEFollowUpController::class, 'getPatientDetailsByPhone']);
+
 });
 
 
@@ -66,6 +87,7 @@ Route::post('/patient/logout',[PatientAuthController::class, 'logout']);
 
 
 Route::post('/admin/login', [AdminAuthController::class, 'login']);
+Route::get('/patient/payment-status', [FollowUpController::class, 'checkPaymentStatus']);
 
 
 Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
@@ -94,6 +116,22 @@ Route::middleware(['auth:sanctum', 'role:distributor'])->group(function () {
     Route::post('/admin/distributors/assign-engineer', [DistController::class, 'assignServiceEngineer']);   
     Route::get('/admin/distributors/replacement/{id}', [DistController::class, 'getReplacementDetails']); 
     Route::post('/admin/distributors/replacement/assign-ipg-serial', [DistController::class, 'assignNewIpgSerialNumber']);
+
+    Route::get('/admin/distributors/pending-replacement-requests', [DistController::class, 'listAllPendingRequests']);
+
+
+                                                 /* FOLLOW UP SERVICES ROUTES*/
+
+        // Get list of all pending follow-up requests
+      Route::get('/admin/distributors/follow-up/requests', [DistFollowUpController::class, 'getFollowUpRequests']);                                          
+      // Get status of specific follow-up request
+      Route::get('/admin/distributors/follow-up/{id}', [DistFollowUpController::class, 'getFollowUpStatus']);
+    
+
+      
+      // Assign service engineer to a follow-up request
+      Route::post('/admin/distributors/follow-up/{id}/assign', [DistFollowUpController::class, 'assignServiceEngineer']);
+      Route::get('/admin/distributors/actionables', [DistController::class, 'getAllActionables']);
 });
 
 
@@ -109,9 +147,27 @@ Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarr
     Route::post('/patient/replacement-request', [PatientImplantController::class, 'requestReplacement']);
 
     Route::get('/patient/replacement-request/status', [PatientImplantController::class, 'getReplacementStatus']);
+    
+
+    Route::post('/patient/upgrade-implant', [PatientImplantController::class, 'linkPatientToImplant']);
+    
+    
+    //          FOLLOW UP ROUTES
+    Route::post('/patient/payment-details', [FollowUpController::class, 'submitPaymentDetails']);
+
+    //payment done or not? how many request does the patient have that the patient has paid for? 
+    Route::get('/patient/payment-history', [FollowUpController::class, 'getPatientPaymentHistory']);
+
+
+    Route::post('/patient/follow-up-request', [FollowUpController::class, 'createFollowUpRequest']);
+    Route::get('/patient/follow-up-status', [FollowUpController::class, 'getFollowUpStatus']);
+    Route::get('/patient/get-user-details', [PatientImplantController::class, 'getUserDetails']);
+    Route::get('/patient/has-implant', [PatientImplantController::class, 'checkIfPatientHasImplant']);
+    Route::delete('/patient/follow-up-request', [FollowUpController::class, 'deleteFollowUpRequest']);
 
 
 
+    
 
     
 });

@@ -22,7 +22,7 @@ class CreateDeviceReplacementsTable extends Migration
             $table->string('new_ipg_serial_number')->nullable();
             // Warranty fields
             $table->text('replacement_reason')->nullable();
-            $table->date('planned_replacement_date')->nullable();
+            $table->datetime('planned_replacement_date')->nullable();
             $table->string('interrogation_report_path')->nullable();
             $table->string('prescription_path')->nullable();
             $table->foreignId('service_engineer_id')->nullable()->unique()->constrained('users');
