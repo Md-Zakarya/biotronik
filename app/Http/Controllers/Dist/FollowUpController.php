@@ -129,7 +129,7 @@ class FollowUpController extends Controller
     public function assignServiceEngineer(Request $request, $id)
     {
         $validated = $request->validate([
-            'service_engineer_id' => 'required|exists:users,id',
+            'service_engineer_id' => 'required_if:status,approved|exists:users,id',
             'status' => 'required|in:approved,rejected',
             'rejection_reason' => 'required_if:status,rejected'
         ]);

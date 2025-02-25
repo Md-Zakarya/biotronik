@@ -87,6 +87,7 @@ Route::post('/patient/logout',[PatientAuthController::class, 'logout']);
 
 
 Route::post('/admin/login', [AdminAuthController::class, 'login']);
+Route::get('/patient/payment-status', [FollowUpController::class, 'checkPaymentStatus']);
 
 
 Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {

@@ -152,51 +152,56 @@ class FollowUpController extends Controller
         }
     }
     public function getFollowUpStatus(Request $request)
-    {
-        $user = $request->user();
+{
+    $user = $request->user();
 
-        // Retrieve the latest follow-up request for the authenticated user
-        $followUp = FollowUpRequest::where('patient_id', $user->id)
-            ->latest()
-            ->first();
+    // Retrieve the latest follow-up request for the authenticated user
+    $followUp = FollowUpRequest::where('patient_id', $user->id)
+        ->latest()
+        ->first();
 
-        if (!$followUp) {
-            return response()->json([
-                'message' => 'Follow-up request not found'
-            ], 404);
-        }
-
-        // Retrieve the associated payment using the payment_id from the follow-up request
-        $payment = Payment::find($followUp->payment_id);
-
-        if (!$payment) {
-            return response()->json([
-                'message' => 'Payment information not found'
-            ], 404);
-        }
-
+    if (!$followUp) {
         return response()->json([
-            'message' => 'Follow-up status retrieved successfully',
-            'data' => [
-                'status' => $followUp->status,
-                'follow_up_id' => $followUp->follow_up_id,
-                'purchase' => $payment->payment_date,
-                'validity' => \Carbon\Carbon::parse($payment->payment_date)->addDays(15), // 15 days after purchase date
-                //'appointment_date' => $followUp->appointment_date,
-                //'appointment_time' => $followUp->appointment_time,
-                'appointment_datetime' => $followUp->appointment_datetime->format('Y-m-d H:i:s'),
-                'reason' => $followUp->reason,
-                'channel_partner' => $followUp->channel_partner,
-                'accompanying_person_name' => $followUp->accompanying_person_name,
-                'accompanying_person_phone' => $followUp->accompanying_person_phone,
-                'hospital_name' => $followUp->hospital_name,
-                'doctor_name' => $followUp->doctor_name,
-                'patient_name' => $user->name,
-                'patient_phone' => $user->phone_number,
-                'patient_email' => $user->email,
-            ]
-        ], 200);
+            'message' => 'Follow-up request not found'
+        ], 404);
     }
+
+    // Retrieve the associated payment using the payment_id from the follow-up request
+    $payment = Payment::find($followUp->payment_id);
+
+    if (!$payment) {
+        return response()->json([
+            'message' => 'Payment information not found'
+        ], 404);
+    }
+
+    $responseData = [
+        'status' => $followUp->status,
+        'follow_up_id' => $followUp->follow_up_id,
+        'purchase' => $payment->payment_date,
+        'validity' => \Carbon\Carbon::parse($payment->payment_date)->addDays(15), // 15 days after purchase date
+        'appointment_datetime' => $followUp->appointment_datetime->format('Y-m-d H:i:s'),
+        'reason' => $followUp->reason,
+        'channel_partner' => $followUp->channel_partner,
+        'accompanying_person_name' => $followUp->accompanying_person_name,
+        'accompanying_person_phone' => $followUp->accompanying_person_phone,
+        'hospital_name' => $followUp->hospital_name,
+        'doctor_name' => $followUp->doctor_name,
+        'patient_name' => $user->name,
+        'patient_phone' => $user->phone_number,
+        'patient_email' => $user->email,
+    ];
+
+    // Add rejection_reason if status is rejected
+    if ($followUp->status === 'rejected' && !empty($followUp->rejection_reason)) {
+        $responseData['rejection_reason'] = $followUp->rejection_reason;
+    }
+
+    return response()->json([
+        'message' => 'Follow-up status retrieved successfully',
+        'data' => $responseData
+    ], 200);
+}
 
     public function getPatientPaymentHistory(Request $request)
     {
@@ -246,4 +251,26 @@ class FollowUpController extends Controller
             ], 500);
         }
     }
+    public function checkPaymentStatus(Request $request)
+    {
+        $patientId = $request->user()->id;
+        
+        $payment = Payment::where('patient_id', $patientId)
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        if (!$payment) {
+            return response()->json([
+                'hasPaid' => false,
+                'message' => 'No payment records found'
+            ], 200);
+        }
+
+        return response()->json([
+            'hasPaid' => true,
+            'lastPaymentDate' => $payment->created_at,
+            'amount' => $payment->amount
+        ], 200);
+    }
+
 }

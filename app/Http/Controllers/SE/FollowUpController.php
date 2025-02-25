@@ -11,37 +11,39 @@ use Illuminate\Http\Request;
 class FollowUpController extends Controller
 {
     public function getFollowUpRequests(Request $request)
-    {
-        try {
-            $serviceEngineerId = $request->user()->id;
+{
+    try {
+        $serviceEngineerId = $request->user()->id;
 
-            $followUpRequests = FollowUpRequest::with(['patient'])
-                ->where('status', FollowUpRequest::STATUS_APPROVED)
-                ->where('service_engineer_id', $serviceEngineerId)
-                ->get()
-                ->map(function ($request) {
-                    return [
+        $followUpRequests = FollowUpRequest::with(['patient'])
+            ->where('status', FollowUpRequest::STATUS_APPROVED)
+            ->where('service_engineer_id', $serviceEngineerId) 
+            ->get()
+            ->map(function ($request) {
+                return [
+                    'Follow_up_request_id' => $request->id,
+                    'patient_id' => $request->patient->id,
+                    'patient_name' => $request->patient->name,
+                    'state' => $request->state,
+                    'ticket_type' => 'Follow-up Service',
+                    'appointment_datetime' => $request->appointment_datetime,
+                    // Change status display to 'pending' when status is 'approved'
+                    'status' => $request->status === FollowUpRequest::STATUS_APPROVED ? 'pending' : $request->status,
+                ];
+            });
 
-                        'Follow_up_request_id' => $request->id,
-                        'patient_id' => $request->patient->id,
-                        'patient_name' => $request->patient->name,
-                        'state' => $request->state,
-                        'ticket_type' => 'Follow-up Service'
-                    ];
-                });
+        return response()->json([
+            'message' => 'Approved follow-up requests retrieved successfully',
+            'data' => $followUpRequests
+        ], 200);
 
-            return response()->json([
-                'message' => 'Approved follow-up requests retrieved successfully',
-                'data' => $followUpRequests
-            ], 200);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Error retrieving follow-up requests',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Error retrieving follow-up requests', 
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
 
     public function getFollowUpStatus(Request $request, $id)
     {
