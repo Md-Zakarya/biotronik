@@ -228,6 +228,7 @@ class PatientAuthController extends Controller
 //     }
 // }
 
+
     public function loginWithPhone(Request $request)
     {
         try {
@@ -256,19 +257,19 @@ class PatientAuthController extends Controller
                     'message' => 'Invalid or expired OTP'
                 ], 400);
             }
-            // Delete OTP after successful verification
-            DB::table('otps')
-                ->where('contact', $request->phone_number)
-                ->where('otp', $request->otp)
-                ->delete();
 
-            $patient->tokens()->delete();
-            $token = $patient->createToken('patient_auth_token')->plainTextToken;
-
-            DB::table('otps')
-                ->where('contact', $request->phone_number)
-                ->where('otp', $request->otp)
-                ->delete();
+            // Check if patient is a service engineer
+            if ($patient->is_service_engineer) {
+                $user = User::where('id', $patient->user_id)->first();
+                $user->tokens()->delete();
+                $token = $user->createToken('auth_token')->plainTextToken;
+                $role = 'sales-representative';
+            } else {
+                // For regular patients, generate Patient token
+                $patient->tokens()->delete();
+                $token = $patient->createToken('patient_auth_token')->plainTextToken;
+                $role = 'user';
+            }
 
             return response()->json([
                 'status' => 'success',
@@ -276,7 +277,8 @@ class PatientAuthController extends Controller
                 'data' => [
                     'patient' => $patient,
                     'access_token' => $token,
-                    'token_type' => 'Bearer'
+                    'token_type' => 'Bearer',
+                    'role' => $role
                 ]
             ], 200);
 
@@ -294,6 +296,76 @@ class PatientAuthController extends Controller
             ], 500);
         }
     }
+
+
+
+
+    // public function loginWithPhone(Request $request)
+    // {
+    //     try {
+    //         $request->validate([
+    //             'phone_number' => 'required|string|regex:/^[0-9]{10}$/',
+    //             'otp' => 'required|string|size:6'
+    //         ], [
+    //             'phone_number.required' => 'Phone number is required',
+    //             'phone_number.regex' => 'Please enter a valid 10-digit phone number',
+    //             'otp.required' => 'OTP is required',
+    //             'otp.size' => 'OTP must be 6 digits'
+    //         ]);
+
+    //         $patient = Patient::where('phone_number', $request->phone_number)->first();
+
+    //         if (!$patient) {
+    //             return response()->json([
+    //                 'status' => 'error',
+    //                 'message' => 'Account not found with this phone number'
+    //             ], 404);
+    //         }
+
+    //         if (!$this->verifyOtp($request->phone_number, $request->otp)) {
+    //             return response()->json([
+    //                 'status' => 'error',
+    //                 'message' => 'Invalid or expired OTP'
+    //             ], 400);
+    //         }
+    //         // Delete OTP after successful verification
+    //         DB::table('otps')
+    //             ->where('contact', $request->phone_number)
+    //             ->where('otp', $request->otp)
+    //             ->delete();
+
+    //         $patient->tokens()->delete();
+    //         $token = $patient->createToken('patient_auth_token')->plainTextToken;
+
+    //         DB::table('otps')
+    //             ->where('contact', $request->phone_number)
+    //             ->where('otp', $request->otp)
+    //             ->delete();
+
+    //         return response()->json([
+    //             'status' => 'success',
+    //             'message' => 'Login successful',
+    //             'data' => [
+    //                 'patient' => $patient,
+    //                 'access_token' => $token,
+    //                 'token_type' => 'Bearer'
+    //             ]
+    //         ], 200);
+
+    //     } catch (ValidationException $e) {
+    //         return response()->json([
+    //             'status' => 'error',
+    //             'message' => 'Validation failed',
+    //             'errors' => $e->errors()
+    //         ], 422);
+    //     } catch (\Exception $e) {
+    //         return response()->json([
+    //             'status' => 'error',
+    //             'message' => 'Login failed',
+    //             'error' => $e->getMessage()
+    //         ], 500);
+    //     }
+    // }
 
     public function logout(Request $request)
     {
