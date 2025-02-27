@@ -62,5 +62,8 @@ class Implant extends Model
     {
         return $this->belongsTo(Patient::class);
     }
-   
+   Public function ipgDevice()
+   {
+    return $this->hasOne(IpgDevice::class);
+   }
 }

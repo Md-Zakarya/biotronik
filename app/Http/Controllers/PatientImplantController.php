@@ -534,7 +534,8 @@ class PatientImplantController extends Controller
                 $validationRules += [
                     'replacement_reason' => 'required|string',
                     // 'planned_replacement_date' => 'required|date|after:today',
-                    'planned_replacement_date' => 'required|date_format:Y-m-d H:i:s|after:now',
+                    // 'planned_replacement_date' => 'required|date_format:Y-m-d H:i:s|after:now',
+                    'planned_replacement_date' => 'required|date_format:Y-m-d H:i|after:now',
                     // 'interrogation_report' => 'required|file|max:2048',
                     // 'prescription' => 'required|file|max:2048'
                 ];

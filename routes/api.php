@@ -20,7 +20,7 @@ use App\Http\Controllers\Dist\FollowUpController as DistFollowUpController;
 use App\Http\Controllers\SE\FollowUpController as SEFollowUpController;
 
 
-
+use App\Http\Controllers\IpgDeviceController;
 
 use App\Http\Controllers\PatientAuth\PatientAuthController;
 
@@ -68,10 +68,10 @@ Route::middleware(['auth:sanctum', 'role:sales-representative'])->group(function
     Route::get('/service-engineer/follow-up-requests/{id}', [SEFollowUpController::class, 'getFollowUpStatus']);
     Route::post('/service-engineer/follow-up-requests/{id}/complete', [SEFollowUpController::class, 'markAsComplete']);
 
-    
+
 
     Route::post('/service-engineer/follow-up-requests', [SEFollowUpController::class, 'createFollowUpRequest']);
-    
+
     Route::get('/service-engineer/patient-details/{phone_number}', [SEFollowUpController::class, 'getPatientDetailsByPhone']);
 
 });
@@ -83,7 +83,7 @@ Route::post('/patient/login-email', [PatientAuthController::class, 'loginWithEma
 Route::post('/patient/login-phone', [PatientAuthController::class, 'loginWithPhone']);
 
 
-Route::post('/patient/logout',[PatientAuthController::class, 'logout']);
+Route::post('/patient/logout', [PatientAuthController::class, 'logout']);
 
 
 Route::post('/admin/login', [AdminAuthController::class, 'login']);
@@ -94,10 +94,13 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin-only', function () {
         return response()->json(['message' => 'Admin access only']);
     });
-    
+
     // Add new employee management routes
     Route::post('/admin/add-employee', [AdminController::class, 'addEmployee']);
     Route::get('/admin/employees', [AdminController::class, 'listEmployees']);
+
+    Route::patch('/admin/update-employee/{id}', [AdminController::class, 'updateEmployee']);
+    Route::delete('/admin/delete-employee/{id}', [AdminController::class, 'deleteEmployee']);
 
     // route::get('/admin/distributors', [DistController::class, 'listRequests']); 
     // Route::get('/admin/distributors/sales-representatives', [DistController::class, 'listSalesRepresentatives']);   
@@ -107,51 +110,58 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     // Route::post('/admin/distributors/replacement/assign-ipg-serial', [DistController::class, 'assignNewIpgSerialNumber']);
 
 
-   
+
 });
 
 Route::middleware(['auth:sanctum', 'role:distributor'])->group(function () {
-    Route::get('/admin/distributors', [DistController::class, 'listRequests']); 
-    Route::get('/admin/distributors/sales-representatives', [DistController::class, 'listSalesRepresentatives']);   
-    Route::post('/admin/distributors/assign-engineer', [DistController::class, 'assignServiceEngineer']);   
-    Route::get('/admin/distributors/replacement/{id}', [DistController::class, 'getReplacementDetails']); 
+    Route::get('/admin/distributors', [DistController::class, 'listRequests']);
+    Route::get('/admin/distributors/sales-representatives', [DistController::class, 'listSalesRepresentatives']);
+    Route::post('/admin/distributors/assign-engineer', [DistController::class, 'assignServiceEngineer']);
+    Route::get('/admin/distributors/replacement/{id}', [DistController::class, 'getReplacementDetails']);
     Route::post('/admin/distributors/replacement/assign-ipg-serial', [DistController::class, 'assignNewIpgSerialNumber']);
 
     Route::get('/admin/distributors/pending-replacement-requests', [DistController::class, 'listAllPendingRequests']);
 
 
-                                                 /* FOLLOW UP SERVICES ROUTES*/
+    /* FOLLOW UP SERVICES ROUTES*/
 
-        // Get list of all pending follow-up requests
-      Route::get('/admin/distributors/follow-up/requests', [DistFollowUpController::class, 'getFollowUpRequests']);                                          
-      // Get status of specific follow-up request
-      Route::get('/admin/distributors/follow-up/{id}', [DistFollowUpController::class, 'getFollowUpStatus']);
-    
+    // Get list of all pending follow-up requests
+    Route::get('/admin/distributors/follow-up/requests', [DistFollowUpController::class, 'getFollowUpRequests']);
+    // Get status of specific follow-up request
+    Route::get('/admin/distributors/follow-up/{id}', [DistFollowUpController::class, 'getFollowUpStatus']);
 
-      
-      // Assign service engineer to a follow-up request
-      Route::post('/admin/distributors/follow-up/{id}/assign', [DistFollowUpController::class, 'assignServiceEngineer']);
-      Route::get('/admin/distributors/actionables', [DistController::class, 'getAllActionables']);
+
+
+    // Assign service engineer to a follow-up request
+    Route::post('/admin/distributors/follow-up/{id}/assign', [DistFollowUpController::class, 'assignServiceEngineer']);
+    Route::get('/admin/distributors/actionables', [DistController::class, 'getAllActionables']);
 });
 
+
+Route::get('/ipg-devices', [IpgDeviceController::class, 'index']);
+Route::get('ipg-devices/{serialNumber}', [IpgDeviceController::class, 'getDeviceBySerialNumber']);
+// Route::post('/ipg-devices', [IpgDeviceController::class, 'store']);
+// Route::post('/ipg-devices/link', [IpgDeviceController::class, 'linkToPatient']);
+// Route::post('/ipg-devices/unlink', [IpgDeviceController::class, 'unlinkFromPatient']);
+// Route::get('/ipg-devices/available', [IpgDeviceController::class, 'getAvailableDevices']);
 
 
 //Replacement routes
 
 Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarrantyStatus'])
- ->middleware('auth:sanctum');
+    ->middleware('auth:sanctum');
 
- Route::middleware('auth:sanctum')->group(function () {
+Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarrantyStatus']);
     Route::post('/patient/replacement-request', [PatientImplantController::class, 'requestReplacement']);
 
     Route::get('/patient/replacement-request/status', [PatientImplantController::class, 'getReplacementStatus']);
-    
+
 
     Route::post('/patient/upgrade-implant', [PatientImplantController::class, 'linkPatientToImplant']);
-    
-    
+
+
     //          FOLLOW UP ROUTES
     Route::post('/patient/payment-details', [FollowUpController::class, 'submitPaymentDetails']);
 
@@ -167,21 +177,21 @@ Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarr
 
 
 
-    
 
-    
+
+
 });
 
 
 
 
 Route::middleware(['auth:sanctum', 'role:admin'])
-->get('/admin/replacement-requests', [TicketController::class, 'getAllReplacementRequests']);
+    ->get('/admin/replacement-requests', [TicketController::class, 'getAllReplacementRequests']);
 
 Route::middleware(['auth:sanctum', 'role:admin'])
-->get('/admin/pending-replacement-requests', [TicketController::class, 'getPendingReplacementRequests']);
+    ->get('/admin/pending-replacement-requests', [TicketController::class, 'getPendingReplacementRequests']);
 Route::middleware(['auth:sanctum', 'role:admin'])
-->get('/admin/replacement-requests/{id}', [TicketController::class, 'getReplacementRequestDetails']);
+    ->get('/admin/replacement-requests/{id}', [TicketController::class, 'getReplacementRequestDetails']);
 
-Route::middleware(['auth:sanctum','role:admin'])
-->post('/admin/replacement-requests/{id}/decision', [TicketController::class, 'decideReplacementRequest']);
+Route::middleware(['auth:sanctum', 'role:admin'])
+    ->post('/admin/replacement-requests/{id}/decision', [TicketController::class, 'decideReplacementRequest']);
