@@ -148,8 +148,8 @@ Route::get('ipg-devices/{serialNumber}', [IpgDeviceController::class, 'getDevice
 
 //Replacement routes
 
-Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarrantyStatus'])
-    ->middleware('auth:sanctum');
+
+    // ->middleware('auth:sanctum');
 
 Route::middleware('auth:sanctum')->group(function () {
 
@@ -174,6 +174,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/patient/get-user-details', [PatientImplantController::class, 'getUserDetails']);
     Route::get('/patient/has-implant', [PatientImplantController::class, 'checkIfPatientHasImplant']);
     Route::delete('/patient/follow-up-request', [FollowUpController::class, 'deleteFollowUpRequest']);
+    Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarrantyStatus']);
 
 
 
