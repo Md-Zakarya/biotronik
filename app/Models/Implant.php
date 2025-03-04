@@ -41,20 +41,23 @@ class Implant extends Model
         'rv_lead_model',
         'rv_lead_serial',
         'csp_lead_brand',
-        'is_csp_implant'
+        'is_csp_implant',
+        'ra_rv_leads'
         
     ];
 
     protected $dates = [
         'implantation_date',
-        'warranty_expired_at'  // Add this line
+        'warranty_expired_at',  // Add this line
+    
     ];
 
     protected $casts = [
         'pre_feb_2022' => 'boolean',
         'has_ra_rv_lead' => 'boolean',
         'has_extra_lead' => 'boolean',
-        'is_service_engineer' => 'boolean'
+        'is_service_engineer' => 'boolean',
+        'ra_rv_leads' => 'array' 
         
     ];
 

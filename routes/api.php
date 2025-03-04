@@ -153,7 +153,7 @@ Route::get('ipg-devices/{serialNumber}', [IpgDeviceController::class, 'getDevice
 
 Route::middleware('auth:sanctum')->group(function () {
 
-    Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarrantyStatus']);
+    // Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarrantyStatus']);
     Route::post('/patient/replacement-request', [PatientImplantController::class, 'requestReplacement']);
 
     Route::get('/patient/replacement-request/status', [PatientImplantController::class, 'getReplacementStatus']);

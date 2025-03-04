@@ -31,6 +31,7 @@ class CreateImplantsTable extends Migration
         
             
             $table->boolean('has_ra_rv_lead')->nullable();
+            $table->json('ra_rv_leads')->nullable();
             $table->boolean('has_extra_lead')->nullable();
 
 

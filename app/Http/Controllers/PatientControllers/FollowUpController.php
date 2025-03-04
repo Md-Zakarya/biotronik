@@ -111,7 +111,7 @@ class FollowUpController extends Controller
                 'channel_partner' => 'required|string',
                 'accompanying_person_name' => 'required|string',
                 'accompanying_person_phone' => 'required|string',
-                'appointment_datetime' => 'required|date_format:Y-m-d H:i:s|after:now',
+                'appointment_datetime' => 'required|date_format:Y-m-d H:i|after:now',
                 'reason' => 'required|string'
             ]);
 
