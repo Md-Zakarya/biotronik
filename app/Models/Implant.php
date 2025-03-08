@@ -42,7 +42,9 @@ class Implant extends Model
         'rv_lead_serial',
         'csp_lead_brand',
         'is_csp_implant',
-        'ra_rv_leads'
+        'ra_rv_leads',
+        'implant_brand',
+        'active'
         
     ];
 

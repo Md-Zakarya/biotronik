@@ -70,9 +70,18 @@ Route::middleware(['auth:sanctum', 'role:sales-representative'])->group(function
 
 
 
+
+    // Payment management routes for service engineers
+    Route::post('/service-engineer/payment-request', [SEFollowUpController::class, 'createPatientPaymentRequest']);
+    Route::post('/service-engineer/make-payment', [SEFollowUpController::class, 'makePayment']);
+
+    Route::get('/service-engineer/payments/{paymentId}', [FollowUpController::class, 'getPaymentStatus']);
+
+
     Route::post('/service-engineer/follow-up-requests', [SEFollowUpController::class, 'createFollowUpRequest']);
 
     Route::get('/service-engineer/patient-details/{phone_number}', [SEFollowUpController::class, 'getPatientDetailsByPhone']);
+    // Route::get('/service-engineer/payments/{paymentId}', [SEFollowUpController::class, 'getPaymentStatus']);
 
 });
 
@@ -87,7 +96,6 @@ Route::post('/patient/logout', [PatientAuthController::class, 'logout']);
 
 
 Route::post('/admin/login', [AdminAuthController::class, 'login']);
-Route::get('/patient/payment-status', [FollowUpController::class, 'checkPaymentStatus']);
 
 
 Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
@@ -148,12 +156,12 @@ Route::get('ipg-devices/{serialNumber}', [IpgDeviceController::class, 'getDevice
 
 //Replacement routes
 
-
-    // ->middleware('auth:sanctum');
+Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarrantyStatus'])
+    ->middleware('auth:sanctum');
 
 Route::middleware('auth:sanctum')->group(function () {
 
-    // Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarrantyStatus']);
+    Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarrantyStatus']);
     Route::post('/patient/replacement-request', [PatientImplantController::class, 'requestReplacement']);
 
     Route::get('/patient/replacement-request/status', [PatientImplantController::class, 'getReplacementStatus']);
@@ -174,10 +182,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/patient/get-user-details', [PatientImplantController::class, 'getUserDetails']);
     Route::get('/patient/has-implant', [PatientImplantController::class, 'checkIfPatientHasImplant']);
     Route::delete('/patient/follow-up-request', [FollowUpController::class, 'deleteFollowUpRequest']);
-    Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarrantyStatus']);
 
 
 
+    Route::get('/patient/payment-status', [FollowUpController::class, 'checkPaymentStatus']);
 
 
 

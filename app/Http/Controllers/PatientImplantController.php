@@ -557,6 +557,7 @@ class PatientImplantController extends Controller
                     'warranty_expired_at' => Carbon::parse($request->implantation_date)->addMonths(3),
                     'lead_brand' => 'Biotronik'
                 ];
+                
 
                 Log::debug("[$requestId] Base implant data prepared", [
                     'data' => array_diff_key($implantData, ['ra_rv_leads' => ''])
@@ -1273,96 +1274,196 @@ class PatientImplantController extends Controller
         }
     }
 
+    // public function linkPatientToImplant(Request $request)
+    // {
+    //     $validated = $request->validate([
+    //         'ipg_serial_number' => 'required|string|exists:implants,ipg_serial_number',
+    //         'secret_key' => 'required|string'
+    //     ]);
+
+    //     try {
+    //         // Get authenticated patient's ID
+    //         $patientId = $request->user()->id;
+
+    //         // Find the implant with matching IPG serial and secret key
+    //         $implant = Implant::where('ipg_serial_number', $validated['ipg_serial_number'])
+    //             ->where('secret_key', $validated['secret_key'])
+    //             ->first();
+
+    //         if (!$implant) {
+    //             return response()->json([
+    //                 'message' => 'Invalid IPG serial number or secret key'
+    //             ], 404);
+    //         }
+
+    //         // Check if implant is already linked to a patient
+    //         if ($implant->patient_id) {
+    //             return response()->json([
+    //                 'message' => 'This implant is already linked to a patient'
+    //             ], 400);
+    //         }
+
+    //         // Begin transaction
+    //         \DB::beginTransaction();
+    //         try {
+    //             // Deactivate ALL existing implants for this patient
+    //             Implant::where('patient_id', $patientId)
+    //                 ->update(['active' => false]);
+
+    //             // Find the most recent active implant to copy fields from
+    //             $oldImplant = Implant::where('patient_id', $patientId)
+    //                 ->latest()
+    //                 ->first();
+
+    //             if ($oldImplant) {
+    //                 // Fields to copy from old implant
+    //                 $fieldsToCopy = [
+    //                     'channel_partner',
+    //                     'has_ra_rv_lead',
+    //                     'has_extra_lead',
+    //                     'patient_id_card',
+    //                     'warranty_card',
+    //                     'interrogation_report'
+    //                 ];
+
+    //                 // Copy fields from old implant to new implant
+    //                 foreach ($fieldsToCopy as $field) {
+    //                     if (isset($oldImplant->$field)) {
+    //                         $implant->$field = $oldImplant->$field;
+    //                     }
+    //                 }
+    //             }
+
+    //             // Link new implant to patient and set it as active
+    //             $implant->update([
+    //                 'patient_id' => $patientId,
+    //                 'active' => true
+    //             ]);
+
+    //             \DB::commit();
+
+    //             return response()->json([
+    //                 'message' => 'Implant linked to patient successfully',
+    //                 'data' => [
+    //                     'ipg_serial_number' => $implant->ipg_serial_number,
+    //                     'previous_implants_deactivated' => $oldImplant ? true : false
+    //                 ]
+    //             ], 200);
+
+    //         } catch (\Exception $e) {
+    //             \DB::rollBack();
+    //             throw $e;
+    //         }
+
+    //     } catch (\Exception $e) {
+    //         return response()->json([
+    //             'message' => 'Error linking implant to patient',
+    //             'error' => $e->getMessage()
+    //         ], 500);
+    //     }
+    // }
+
+
+
+
     public function linkPatientToImplant(Request $request)
-    {
-        $validated = $request->validate([
-            'ipg_serial_number' => 'required|string|exists:implants,ipg_serial_number',
-            'secret_key' => 'required|string'
-        ]);
+{
+    $validated = $request->validate([
+        'ipg_serial_number' => 'required|string|exists:implants,ipg_serial_number',
+        'secret_key' => 'required|string'
+    ]);
 
+    try {
+        // Get authenticated patient's ID
+        $patientId = $request->user()->id;
+
+        // Find implants with matching secret key
+        $implants = Implant::where('secret_key', $validated['secret_key'])->get();
+        
+        // Find the specific implant with matching IPG serial number
+        $primaryImplant = $implants->firstWhere('ipg_serial_number', $validated['ipg_serial_number']);
+
+        if (!$primaryImplant) {
+            return response()->json([
+                'message' => 'Invalid IPG serial number or secret key'
+            ], 404);
+        }
+
+        // Check if any of these implants are already linked to a different patient
+        $alreadyLinked = $implants->filter(function($implant) use ($patientId) {
+            return $implant->patient_id !== null && $implant->patient_id != $patientId;
+        })->count() > 0;
+
+        if ($alreadyLinked) {
+            return response()->json([
+                'message' => 'One or more implants with this secret key are already linked to another patient'
+            ], 400);
+        }
+
+        // Begin transaction
+        \DB::beginTransaction();
         try {
-            // Get authenticated patient's ID
-            $patientId = $request->user()->id;
+            // Deactivate ALL existing implants for this patient
+            Implant::where('patient_id', $patientId)
+                ->update(['active' => false]);
 
-            // Find the implant with matching IPG serial and secret key
-            $implant = Implant::where('ipg_serial_number', $validated['ipg_serial_number'])
-                ->where('secret_key', $validated['secret_key'])
+            // Find the most recent implant to copy fields from
+            $oldImplant = Implant::where('patient_id', $patientId)
+                ->latest()
                 ->first();
 
-            if (!$implant) {
-                return response()->json([
-                    'message' => 'Invalid IPG serial number or secret key'
-                ], 404);
-            }
+            // Fields to copy from old implant if it exists
+            $fieldsToCopy = [
+                'channel_partner',
+                'has_ra_rv_lead',
+                'has_extra_lead',
+                'patient_id_card',
+                'warranty_card',
+                'interrogation_report'
+            ];
 
-            // Check if implant is already linked to a patient
-            if ($implant->patient_id) {
-                return response()->json([
-                    'message' => 'This implant is already linked to a patient'
-                ], 400);
-            }
-
-            // Begin transaction
-            \DB::beginTransaction();
-            try {
-                // Deactivate ALL existing implants for this patient
-                Implant::where('patient_id', $patientId)
-                    ->update(['active' => false]);
-
-                // Find the most recent active implant to copy fields from
-                $oldImplant = Implant::where('patient_id', $patientId)
-                    ->latest()
-                    ->first();
-
+            // Link all implants with the same secret key to this patient
+            foreach ($implants as $implant) {
+                // Copy fields from old implant if it exists
                 if ($oldImplant) {
-                    // Fields to copy from old implant
-                    $fieldsToCopy = [
-                        'channel_partner',
-                        'has_ra_rv_lead',
-                        'has_extra_lead',
-                        'patient_id_card',
-                        'warranty_card',
-                        'interrogation_report'
-                    ];
-
-                    // Copy fields from old implant to new implant
                     foreach ($fieldsToCopy as $field) {
-                        if (isset($oldImplant->$field)) {
+                        if (isset($oldImplant->$field) && $oldImplant->$field) {
                             $implant->$field = $oldImplant->$field;
                         }
                     }
                 }
-
-                // Link new implant to patient and set it as active
-                $implant->update([
-                    'patient_id' => $patientId,
-                    'active' => true
-                ]);
-
-                \DB::commit();
-
-                return response()->json([
-                    'message' => 'Implant linked to patient successfully',
-                    'data' => [
-                        'ipg_serial_number' => $implant->ipg_serial_number,
-                        'previous_implants_deactivated' => $oldImplant ? true : false
-                    ]
-                ], 200);
-
-            } catch (\Exception $e) {
-                \DB::rollBack();
-                throw $e;
+                
+                // Set the implant's patient_id
+                $implant->patient_id = $patientId;
+                
+                // Only the implant with the specified serial number should be active
+                $implant->active = ($implant->ipg_serial_number == $validated['ipg_serial_number']);
+                
+                $implant->save();
             }
 
-        } catch (\Exception $e) {
+            \DB::commit();
+
             return response()->json([
-                'message' => 'Error linking implant to patient',
-                'error' => $e->getMessage()
-            ], 500);
+                'message' => 'Implant(s) linked to patient successfully',
+                'data' => [
+                    'primary_ipg_serial_number' => $primaryImplant->ipg_serial_number,
+                    'total_implants_linked' => $implants->count(),
+                    'previous_implants_deactivated' => $oldImplant ? true : false
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            \DB::rollBack();
+            throw $e;
         }
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Error linking implant to patient',
+            'error' => $e->getMessage()
+        ], 500);
     }
-
-
-
+}
 }
 

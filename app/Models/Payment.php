@@ -14,7 +14,8 @@ class Payment extends Model
         'payment_status',
         'payment_date',
         'payment_type', // 'follow_up', 'replacement', etc.
-        'payment_details'
+        'payment_details',
+        'service_engineer_id'
     ];
 
     protected $casts = [
