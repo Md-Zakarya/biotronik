@@ -5,9 +5,30 @@ namespace App\Http\Controllers;
 use App\Models\IpgDevice;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use App\Models\IpgSerial;
+use App\Exports\IpgDevicesExport;
+use App\Exports\IpgModelsExport;
+use Maatwebsite\Excel\Facades\Excel;
+
+
 
 class IpgDeviceController extends Controller
 {
+    public function exportToExcel()
+    {
+        return Excel::download(new IpgDevicesExport, 'ipg_devices.csv');
+    }
+
+     /**
+     * Export model details including model number, name, type, warranty, CM and MR
+     */
+    public function exportModelDetails()
+    {
+        return Excel::download(new IpgModelsExport, 'ipg_model_details.csv');
+    }
+    
+
+
     /**
      * Display a listing of IPG devices.
      */
@@ -121,5 +142,8 @@ class IpgDeviceController extends Controller
             ]
         ]);
     }
+
+   
+
 
 }

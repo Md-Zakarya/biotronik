@@ -232,91 +232,114 @@ class AdminController extends Controller
     }
 
     public function deleteEmployee(Request $request, $id)
-{
-    try {
-        // Find the user
-        $user = User::findOrFail($id);
-        
-        // Get user details for logging
-        $userName = $user->name;
-        $userEmail = $user->email;
-        $userRoles = $user->getRoleNames();
-        
-        // Begin transaction to ensure all related data is handled properly
-        \DB::beginTransaction();
-        
-        // Check and handle implants related to this user
-        $implants = \DB::table('implants')->where('user_id', $id)->get();
-        
-        if ($implants->count() > 0) {
-            // Option 1: Set implants' user_id to null (if the column allows nulls)
-            \DB::table('implants')->where('user_id', $id)->update(['user_id' => null]);
-            
-            // Option 2 (alternative): Re-assign implants to a default admin user
-            // \DB::table('implants')->where('user_id', $id)->update(['user_id' => 1]); // 1 is usually the admin ID
+    {
+        try {
+            // Find the user
+            $user = User::findOrFail($id);
+
+            // Get user details for logging
+            $userName = $user->name;
+            $userEmail = $user->email;
+            $userRoles = $user->getRoleNames();
+
+            // Begin transaction to ensure all related data is handled properly
+            \DB::beginTransaction();
+
+            // Check and handle implants related to this user
+            $implants = \DB::table('implants')->where('user_id', $id)->get();
+
+            if ($implants->count() > 0) {
+                // Option 1: Set implants' user_id to null (if the column allows nulls)
+                \DB::table('implants')->where('user_id', $id)->update(['user_id' => null]);
+
+                // Option 2 (alternative): Re-assign implants to a default admin user
+                // \DB::table('implants')->where('user_id', $id)->update(['user_id' => 1]); // 1 is usually the admin ID
+            }
+
+            // Delete related patient record if user is a service engineer
+            if ($user->hasRole('sales-representative')) {
+                Patient::where('user_id', $id)->delete();
+            }
+
+            // Check for other possible relationships
+            // For example, if there are follow-up requests linked to this user
+            if (\Schema::hasTable('follow_up_requests') && \Schema::hasColumn('follow_up_requests', 'service_engineer_id')) {
+                \DB::table('follow_up_requests')
+                    ->where('service_engineer_id', $id)
+                    ->update(['service_engineer_id' => null]);
+            }
+
+            // Revoke all tokens
+            $user->tokens()->delete();
+
+            // Remove all roles
+            $user->roles()->detach();
+
+            // Delete the user
+            $user->delete();
+
+            // Commit transaction
+            \DB::commit();
+
+            // Log the deletion
+            Log::info('Employee deleted', [
+                'admin_id' => auth()->id(),
+                'deleted_employee_id' => $id,
+                'deleted_employee_name' => $userName,
+                'deleted_employee_email' => $userEmail,
+                'deleted_employee_roles' => $userRoles,
+                'implants_reassigned' => $implants->count()
+            ]);
+
+            return response()->json([
+                'message' => 'Employee deleted successfully',
+                'user' => [
+                    'id' => $id,
+                    'name' => $userName,
+                    'email' => $userEmail,
+                    'roles' => $userRoles
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            // Rollback transaction if any error occurs
+            \DB::rollBack();
+
+            Log::error('Error deleting employee', [
+                'error' => $e->getMessage(),
+                'admin_id' => auth()->id(),
+                'employee_id' => $id
+            ]);
+
+            return response()->json([
+                'message' => 'Error deleting employee',
+                'error' => $e->getMessage()
+            ], 500);
         }
-        
-        // Delete related patient record if user is a service engineer
-        if ($user->hasRole('sales-representative')) {
-            Patient::where('user_id', $id)->delete();
-        }
-        
-        // Check for other possible relationships
-        // For example, if there are follow-up requests linked to this user
-        if (\Schema::hasTable('follow_up_requests') && \Schema::hasColumn('follow_up_requests', 'service_engineer_id')) {
-            \DB::table('follow_up_requests')
-                ->where('service_engineer_id', $id)
-                ->update(['service_engineer_id' => null]);
-        }
-        
-        // Revoke all tokens
-        $user->tokens()->delete();
-        
-        // Remove all roles
-        $user->roles()->detach();
-        
-        // Delete the user
-        $user->delete();
-        
-        // Commit transaction
-        \DB::commit();
-        
-        // Log the deletion
-        Log::info('Employee deleted', [
-            'admin_id' => auth()->id(),
-            'deleted_employee_id' => $id,
-            'deleted_employee_name' => $userName,
-            'deleted_employee_email' => $userEmail,
-            'deleted_employee_roles' => $userRoles,
-            'implants_reassigned' => $implants->count()
-        ]);
-        
-        return response()->json([
-            'message' => 'Employee deleted successfully',
-            'user' => [
-                'id' => $id,
-                'name' => $userName,
-                'email' => $userEmail,
-                'roles' => $userRoles
-            ]
-        ], 200);
-        
-    } catch (\Exception $e) {
-        // Rollback transaction if any error occurs
-        \DB::rollBack();
-        
-        Log::error('Error deleting employee', [
-            'error' => $e->getMessage(),
-            'admin_id' => auth()->id(),
-            'employee_id' => $id
-        ]);
-        
-        return response()->json([
-            'message' => 'Error deleting employee',
-            'error' => $e->getMessage()
-        ], 500);
     }
-}
 
+    public function listDistributors()
+    {
+        try {
+            $distributors = User::role('distributor')
+                ->get()
+                ->map(function ($user) {
+                    return [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        
+                    ];
+                });
 
+            return response()->json([
+                'message' => 'Distributors retrieved successfully',
+                'data' => $distributors
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving distributors',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

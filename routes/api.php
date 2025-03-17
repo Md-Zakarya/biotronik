@@ -17,7 +17,11 @@ use App\Http\Controllers\SE\ImplantController;
 use App\Http\Controllers\PatientControllers\FollowUpController;
 
 use App\Http\Controllers\Dist\FollowUpController as DistFollowUpController;
+use App\Http\Controllers\Dist\IpgModelController;
+
 use App\Http\Controllers\SE\FollowUpController as SEFollowUpController;
+
+use App\Http\Controllers\Admin\LeadController;
 
 
 use App\Http\Controllers\IpgDeviceController;
@@ -117,8 +121,26 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
 
     // Route::post('/admin/distributors/replacement/assign-ipg-serial', [DistController::class, 'assignNewIpgSerialNumber']);
 
+    Route::post('/ipg-models/associate-serial', [IpgModelController::class, 'associateMultipleSerials']);
+    Route::get('/admin/distributors-list', [AdminController::class, 'listDistributors']);
 
+    Route::post('admin/ipg-serials/assign-distributor', [IpgModelController::class, 'assignDistributor']);
+    Route::get('admin/ipg-serials', [IpgModelController::class, 'getAllSerials']);
 
+    Route::get('/admin/device-types', [IpgModelController::class, 'getDeviceTypes']);
+    Route::post('/admin/ipg-models', [IpgModelController::class, 'store']);
+    Route::get('/admin/get-all-ipg-models', [IpgModelController::class, 'getAllIpgModels']);
+    Route::get('/admin/ipg-serials/export', [IpgDeviceController::class, 'exportToExcel']);
+   
+    Route::get('/admin/ipg-models/export', [IpgDeviceController::class, 'exportModelDetails']);
+
+    Route::post('/admin/leads/bulk-store', [LeadController::class, 'bulkUpload']);
+    Route::get('/admin/leads', [LeadController::class, 'getLeads']);
+    Route::get('/admin/lead-models', [LeadController::class, 'getLeadModels']);
+    Route::post('/admin/lead-models', [LeadController::class, 'createLeadModel']);
+    Route::post('/admin/lead-serials/assign-distributor', [LeadController::class, 'assignDistributor']);
+    Route::get('/admin/leads/export', [LeadController::class, 'exportLeadsCSV']);
+    Route::get('/admin/lead-models/export', [LeadController::class, 'exportLeadModelsCSV']);
 });
 
 Route::middleware(['auth:sanctum', 'role:distributor'])->group(function () {
@@ -143,6 +165,9 @@ Route::middleware(['auth:sanctum', 'role:distributor'])->group(function () {
     // Assign service engineer to a follow-up request
     Route::post('/admin/distributors/follow-up/{id}/assign', [DistFollowUpController::class, 'assignServiceEngineer']);
     Route::get('/admin/distributors/actionables', [DistController::class, 'getAllActionables']);
+
+
+
 });
 
 
@@ -191,6 +216,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
 });
 
+Route::get('/admin/distributors/models', [IpgModelController::class, 'index']);
 
 
 
@@ -204,3 +230,12 @@ Route::middleware(['auth:sanctum', 'role:admin'])
 
 Route::middleware(['auth:sanctum', 'role:admin'])
     ->post('/admin/replacement-requests/{id}/decision', [TicketController::class, 'decideReplacementRequest']);
+
+
+
+//public API 
+
+
+Route::get('/admin/distributors/models', [IpgModelController::class, 'index']);
+
+Route::get('/get-all-ipg-models', [IpgModelController::class, 'index']);

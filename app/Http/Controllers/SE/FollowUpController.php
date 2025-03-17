@@ -149,7 +149,9 @@ class FollowUpController extends Controller
     public function getPatientDetailsByPhone($phoneNumber)
     {
         try {
-            $patient = Patient::where('phone_number', $phoneNumber)
+            // Load the patient with their implants relationship
+            $patient = Patient::with('implant')
+                ->where('phone_number', $phoneNumber)
                 ->select('id', 'name', 'email', 'phone_number')
                 ->first();
 
@@ -159,9 +161,36 @@ class FollowUpController extends Controller
                 ], 404);
             }
 
+            // Check if patient has an implant registered
+            $hasImplant = $patient->implant !== null;
+
+            // Format response data
+            $responseData = [
+                'id' => $patient->id,
+                'name' => $patient->name,
+                'email' => $patient->email,
+                'phone_number' => $patient->phone_number,
+                'has_implant' => $hasImplant,
+                'implant' => null
+            ];
+
+            // Add implant details if they exist
+            if ($hasImplant) {
+                $responseData['implant'] = [
+                    'id' => $patient->implant->id,
+                    'ipg_serial_number' => $patient->implant->ipg_serial_number,
+                    'ipg_model' => $patient->implant->ipg_model,
+                    'device_name' => $patient->implant->device_name,
+                    'therapy_name' => $patient->implant->therapy_name,
+                    'implantation_date' => $patient->implant->implantation_date,
+                    'hospital_name' => $patient->implant->hospital_name,
+                    'doctor_name' => $patient->implant->doctor_name
+                ];
+            }
+
             return response()->json([
                 'message' => 'Patient details retrieved successfully',
-                'data' => $patient
+                'data' => $responseData
             ], 200);
 
         } catch (\Exception $e) {
@@ -172,63 +201,63 @@ class FollowUpController extends Controller
         }
     }
 
-   
+
 
     /**
- * Create a payment request for a patient
- * This allows service engineers to notify patients that they need to make a payment
- */
+     * Create a payment request for a patient
+     * This allows service engineers to notify patients that they need to make a payment
+     */
 
- public function createPatientPaymentRequest(Request $request)
- {
-     try {
-         // Validate request data
-         $validated = $request->validate([
-             'patient_id' => 'required|exists:patients,id',
-             'amount' => 'required|numeric|min:0',
-             'gst_number' => 'nullable|string',
-             'pan_number' => 'nullable|string'
-         ]);
-         
-         // Get patient and service engineer ID
-         $patient = Patient::findOrFail($validated['patient_id']);
-         $serviceEngineerId = $request->user()->id;
-         
-         // Create payment request record
-         $payment = Payment::create([
-             'patient_id' => $patient->id,
-             'service_engineer_id' => $serviceEngineerId, // Store SE ID directly in the table
-             'gst_number' => $validated['gst_number'] ?? 'AUTO-GENERATED',
-             'pan_number' => $validated['pan_number'] ?? 'AUTO-GENERATED',
-             'amount' => $validated['amount'],
-             'payment_status' => 'pending', // Pending payment from patient
-             'payment_date' => now(),
-             'payment_type' => 'follow_up',
-             'payment_details' => [
-                 'requested_by' => 'service_engineer',
-                 'requested_at' => now()->toDateTimeString()
-             ]
-         ]);
-         
-         return response()->json([
-             'message' => 'Payment request created successfully for patient',
-             'data' => [
-                 'payment_id' => $payment->id,
-                 'amount' => $payment->amount,
-                 'patient_name' => $patient->name,
-                 'patient_phone' => $patient->phone_number,
-                 'service_engineer_id' => $serviceEngineerId,
-                 'status' => 'pending'
-             ]
-         ], 201);
-         
-     } catch (\Exception $e) {
-         return response()->json([
-             'message' => 'Error creating payment request',
-             'error' => $e->getMessage()
-         ], 500);
-     }
- }
+    public function createPatientPaymentRequest(Request $request)
+    {
+        try {
+            // Validate request data
+            $validated = $request->validate([
+                'patient_id' => 'required|exists:patients,id',
+                'amount' => 'required|numeric|min:0',
+                'gst_number' => 'nullable|string',
+                'pan_number' => 'nullable|string'
+            ]);
+
+            // Get patient and service engineer ID
+            $patient = Patient::findOrFail($validated['patient_id']);
+            $serviceEngineerId = $request->user()->id;
+
+            // Create payment request record
+            $payment = Payment::create([
+                'patient_id' => $patient->id,
+                'service_engineer_id' => $serviceEngineerId, // Store SE ID directly in the table
+                'gst_number' => $validated['gst_number'] ?? 'AUTO-GENERATED',
+                'pan_number' => $validated['pan_number'] ?? 'AUTO-GENERATED',
+                'amount' => $validated['amount'],
+                'payment_status' => 'pending', // Pending payment from patient
+                'payment_date' => now(),
+                'payment_type' => 'follow_up',
+                'payment_details' => [
+                    'requested_by' => 'service_engineer',
+                    'requested_at' => now()->toDateTimeString()
+                ]
+            ]);
+
+            return response()->json([
+                'message' => 'Payment request created successfully for patient',
+                'data' => [
+                    'payment_id' => $payment->id,
+                    'amount' => $payment->amount,
+                    'patient_name' => $patient->name,
+                    'patient_phone' => $patient->phone_number,
+                    'service_engineer_id' => $serviceEngineerId,
+                    'status' => 'pending'
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error creating payment request',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
     /**
      * Service engineer makes a payment on behalf of a patient
      */
@@ -243,23 +272,23 @@ class FollowUpController extends Controller
                 'pan_number' => 'nullable|string',
                 'payment_details' => 'nullable|array' // Add validation for optional payment details
             ]);
-            
+
             // Get patient and service engineer ID
             $patient = Patient::findOrFail($validated['patient_id']);
             $serviceEngineerId = $request->user()->id;
-            
+
             // Prepare payment details
             $paymentDetails = [
                 'paid_by' => 'service_engineer',
                 'service_engineer_id' => $serviceEngineerId,
                 'completed_at' => now()->toDateTimeString()
             ];
-            
+
             // Merge additional payment details if provided
             if (isset($validated['payment_details'])) {
                 $paymentDetails = array_merge($paymentDetails, $validated['payment_details']);
             }
-            
+
             // Create completed payment record
             $payment = Payment::create([
                 'patient_id' => $patient->id,
@@ -272,7 +301,7 @@ class FollowUpController extends Controller
                 'payment_type' => 'follow_up',
                 'payment_details' => $paymentDetails
             ]);
-            
+
             return response()->json([
                 'message' => 'Payment completed successfully by service engineer',
                 'data' => [
@@ -283,7 +312,7 @@ class FollowUpController extends Controller
                     'receipt_number' => 'SE-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT)
                 ]
             ], 201);
-            
+
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Error processing payment',
@@ -296,23 +325,23 @@ class FollowUpController extends Controller
     {
         // Start database transaction
         \DB::beginTransaction();
-    
+
         try {
             // Validate patient exists
             $patient = Patient::findOrFail($request->patient_id);
             $serviceEngineerId = $request->user()->id;
-    
+
             // Enhanced duplicate check with locking
             $activeRequest = FollowUpRequest::where('patient_id', $patient->id)
                 ->whereIn('status', [
-                    FollowUpRequest::STATUS_PENDING, 
+                    FollowUpRequest::STATUS_PENDING,
                     FollowUpRequest::STATUS_APPROVED,
                     FollowUpRequest::STATUS_COMPLETED
                 ])
                 ->lockForUpdate() // Lock the rows
                 ->whereBetween('created_at', [now()->subHours(24), now()]) // Check last 24 hours
                 ->first();
-    
+
             if ($activeRequest) {
                 \DB::rollBack();
                 return response()->json([
@@ -322,7 +351,7 @@ class FollowUpController extends Controller
                     'status' => $activeRequest->status
                 ], 400);
             }
-    
+
             // Validate request data
             $validated = $request->validate([
                 'state' => 'required|string',
@@ -336,7 +365,7 @@ class FollowUpController extends Controller
                 'is_paid' => 'required|boolean', // Add validation for paid/free tier flag
                 'payment_id' => 'nullable|exists:payments,id' // For pre-existing payments
             ]);
-    
+
             // Handle payment - either use existing payment or create a new one
             if ($validated['is_paid'] && isset($validated['payment_id'])) {
                 // Verify payment exists and belongs to the patient
@@ -344,7 +373,7 @@ class FollowUpController extends Controller
                     ->where('patient_id', $patient->id)
                     ->where('payment_status', 'completed') // Only allow completed payments
                     ->first();
-    
+
                 if (!$payment) {
                     \DB::rollBack();
                     return response()->json([
@@ -374,7 +403,7 @@ class FollowUpController extends Controller
                     ]
                 ]);
             }
-    
+
             // Create follow-up request (all requests are now completed status)
             $followUpRequest = FollowUpRequest::create([
                 'patient_id' => $patient->id,
@@ -390,10 +419,10 @@ class FollowUpController extends Controller
                 'appointment_datetime' => $validated['appointment_datetime'],
                 'reason' => $validated['reason']
             ]);
-    
+
             // Commit transaction
             \DB::commit();
-    
+
             return response()->json([
                 'message' => 'Follow-up request created successfully',
                 'data' => [
@@ -406,11 +435,11 @@ class FollowUpController extends Controller
                     'completed_at' => $followUpRequest->created_at
                 ]
             ], 201);
-    
+
         } catch (\Exception $e) {
             // Rollback transaction on error
             \DB::rollBack();
-    
+
             return response()->json([
                 'message' => 'Error creating follow-up request',
                 'error' => $e->getMessage()
@@ -425,7 +454,7 @@ class FollowUpController extends Controller
         try {
             // Retrieve the payment record along with the associated patient
             $payment = Payment::with('patient')->findOrFail($paymentId);
-            
+
             // Check if the payment belongs to the authenticated service engineer
             if (auth()->user()->id != $payment->service_engineer_id) {
                 return response()->json([
@@ -433,15 +462,15 @@ class FollowUpController extends Controller
                     'data' => null
                 ], 403);
             }
-            
+
             // Format payment date
             $paymentDate = $payment->payment_date ? $payment->payment_date->format('Y-m-d H:i:s') : null;
-            
+
             // Get relevant details from payment_details JSON
             $paymentDetails = $payment->payment_details ?? [];
             $requestedAt = $paymentDetails['requested_at'] ?? null;
             $completedAt = $paymentDetails['completed_at'] ?? null;
-            
+
             return response()->json([
                 'message' => 'Payment status retrieved successfully',
                 'data' => [
@@ -455,11 +484,11 @@ class FollowUpController extends Controller
                     'payment_type' => $payment->payment_type,
                     'requested_at' => $requestedAt,
                     'completed_at' => $completedAt,
-                    'receipt_number' => $payment->payment_status === 'completed' ? 
+                    'receipt_number' => $payment->payment_status === 'completed' ?
                         'SE-' . str_pad($payment->id, 6, '0', STR_PAD_LEFT) : null
                 ]
             ], 200);
-            
+
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'message' => 'Payment not found',
@@ -478,17 +507,17 @@ class FollowUpController extends Controller
 
 
 
-//         public function createFollowUpRequest(Request $request)
+    //         public function createFollowUpRequest(Request $request)
 // {
 //     // Start database transaction
 //     \DB::beginTransaction();
 
-//         try {
+    //         try {
 //         // Validate patient exists
 //         $patient = Patient::findOrFail($request->patient_id);
 //         $serviceEngineerId = $request->user()->id;
 
-//             // Enhanced duplicate check with locking
+    //             // Enhanced duplicate check with locking
 //         $activeRequest = FollowUpRequest::where('patient_id', $patient->id)
 //             ->whereIn('status', [
 //                 FollowUpRequest::STATUS_PENDING, 
@@ -499,7 +528,7 @@ class FollowUpController extends Controller
 //             ->whereBetween('created_at', [now()->subHours(24), now()]) // Check last 24 hours
 //             ->first();
 
-//             if ($activeRequest) {
+    //             if ($activeRequest) {
 //             \DB::rollBack();
 //             return response()->json([
 //                 'message' => 'A follow-up request already exists for this patient',
@@ -509,7 +538,7 @@ class FollowUpController extends Controller
 //             ], 400);
 //         }
 
-//             // Validate request data
+    //             // Validate request data
 //         $validated = $request->validate([
 //             'state' => 'required|string',
 //             'hospital_name' => 'required|string',
@@ -522,7 +551,7 @@ class FollowUpController extends Controller
 //             'reason' => 'required|string'
 //         ]);
 
-//             // Create payment record
+    //             // Create payment record
 //         $payment = Payment::create([
 //             'patient_id' => $patient->id,
 //             'gst_number' => $request->gst_number ?? 'AUTO-GENERATED',
@@ -534,7 +563,7 @@ class FollowUpController extends Controller
 //             'payment_details' => ['auto_generated' => true]
 //         ]);
 
-//             // Create follow-up request
+    //             // Create follow-up request
 //         $followUpRequest = FollowUpRequest::create([
 //             'patient_id' => $patient->id,
 //             'payment_id' => $payment->id,
@@ -544,10 +573,10 @@ class FollowUpController extends Controller
 //             ...$validated
 //         ]);
 
-//             // Commit transaction
+    //             // Commit transaction
 //         \DB::commit();
 
-//             return response()->json([
+    //             return response()->json([
 //             'message' => 'Follow-up request created and completed successfully',
 //             'data' => [
 //                 'follow_up_id' => $followUpRequest->follow_up_id,
@@ -557,11 +586,11 @@ class FollowUpController extends Controller
 //             ]
 //         ], 201);
 
-//         } catch (\Exception $e) {
+    //         } catch (\Exception $e) {
 //         // Rollback transaction on error
 //         \DB::rollBack();
 
-//             return response()->json([
+    //             return response()->json([
 //             'message' => 'Error creating follow-up request',
 //             'error' => $e->getMessage()
 //         ], 500);

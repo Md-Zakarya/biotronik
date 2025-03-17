@@ -27,6 +27,9 @@ class DatabaseSeeder extends Seeder
             RolePermissionSeeder::class,
             UserSeeder::class,
             IpgDeviceSeeder::class,
+            DeviceTypeSeeder::class,
+            IpgModelSeeder::class,
+            LeadModelSeeder::class,
         ]);
     }
 }
