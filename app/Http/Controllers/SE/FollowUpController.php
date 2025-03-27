@@ -11,39 +11,39 @@ use Illuminate\Http\Request;
 class FollowUpController extends Controller
 {
     public function getFollowUpRequests(Request $request)
-    {
-        try {
-            $serviceEngineerId = $request->user()->id;
+{
+    try {
+        $serviceEngineerId = $request->user()->id;
 
-            $followUpRequests = FollowUpRequest::with(['patient'])
-                ->where('status', FollowUpRequest::STATUS_APPROVED)
-                ->where('service_engineer_id', $serviceEngineerId)
-                ->get()
-                ->map(function ($request) {
-                    return [
-                        'Follow_up_request_id' => $request->id,
-                        'patient_id' => $request->patient->id,
-                        'patient_name' => $request->patient->name,
-                        'state' => $request->state,
-                        'ticket_type' => 'Follow-up Service',
-                        'appointment_datetime' => $request->appointment_datetime,
-                        // Change status display to 'pending' when status is 'approved'
-                        'status' => $request->status === FollowUpRequest::STATUS_APPROVED ? 'pending' : $request->status,
-                    ];
-                });
+        $followUpRequests = FollowUpRequest::with(['patient'])
+            ->whereIn('status', [FollowUpRequest::STATUS_APPROVED, FollowUpRequest::STATUS_COMPLETED])
+            ->where('service_engineer_id', $serviceEngineerId)
+            ->get()
+            ->map(function ($request) {
+                return [
+                    'Follow_up_request_id' => $request->id,
+                    'patient_id' => $request->patient->id,
+                    'patient_name' => $request->patient->name,
+                    'state' => $request->state,
+                    'ticket_type' => 'Follow-up Service',
+                    'appointment_datetime' => $request->appointment_datetime,
+                    // Change status display to 'pending' when status is 'approved'
+                    'status' => $request->status === FollowUpRequest::STATUS_APPROVED ? 'pending' : $request->status,
+                ];
+            });
 
-            return response()->json([
-                'message' => 'Approved follow-up requests retrieved successfully',
-                'data' => $followUpRequests
-            ], 200);
+        return response()->json([
+            'message' => 'Follow-up requests retrieved successfully',
+            'data' => $followUpRequests
+        ], 200);
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Error retrieving follow-up requests',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Error retrieving follow-up requests',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
 
     public function getFollowUpStatus(Request $request, $id)
     {
@@ -58,48 +58,58 @@ class FollowUpController extends Controller
                 ], 404);
             }
 
+            // Check if patient has an implant
+            $hasImplant = $followUpRequest->patient && $followUpRequest->patient->implant;
+
+            // Build response data
+            $responseData = [
+                // Appointment Details
+                'appointment_details' => [
+                    'appointment_datetime' => $followUpRequest->appointment_datetime,
+                    'reason' => $followUpRequest->reason,
+                    'status' => $followUpRequest->status
+                ],
+
+                // Hospital & Physician Details
+                'hospital_details' => [
+                    'hospital_name' => $followUpRequest->hospital_name,
+                    'doctor_name' => $followUpRequest->doctor_name,
+                    'state' => $followUpRequest->state
+                ],
+
+                // Patient Details
+                'patient_details' => [
+                    'patient_name' => $followUpRequest->patient->name,
+                    'patient_phone' => $followUpRequest->patient->phone_number,
+                    'patient_email' => $followUpRequest->patient->email
+                ],
+
+                // Accompanying Person Details
+                'accompanying_person_details' => [
+                    'name' => $followUpRequest->accompanying_person_name,
+                    'phone' => $followUpRequest->accompanying_person_phone
+                ]
+            ];
+
+            // Add device details if implant exists, otherwise indicate no implant registered
+            if ($hasImplant) {
+                $responseData['device_details'] = [
+                    'therapy_type' => $followUpRequest->patient->implant->therapy_name,
+                    'ipg_device_type' => $followUpRequest->patient->implant->device_name,
+                    'ipg_model_name' => $followUpRequest->patient->implant->ipg_model,
+                    'ipg_model_number' => $followUpRequest->patient->implant->ipg_model_number,
+                    'ipg_serial_number' => $followUpRequest->patient->implant->ipg_serial_number
+                ];
+            } else {
+                $responseData['device_details'] = [
+                    'error' => 'No implant registered for this patient'
+                ];
+            }
+
             return response()->json([
                 'message' => 'Follow-up request details retrieved successfully',
-                'data' => [
-                    // Appointment Details
-                    'appointment_details' => [
-                        // 'appointment_date' => $followUpRequest->appointment_date,
-                        // 'appointment_time' => $followUpRequest->appointment_time,
-
-                        'appointment_datetime' => $followUpRequest->appointment_datetime,
-                        'reason' => $followUpRequest->reason,
-                        'status' => $followUpRequest->status
-                    ],
-
-                    // Hospital & Physician Details
-                    'hospital_details' => [
-                        'hospital_name' => $followUpRequest->hospital_name,
-                        'doctor_name' => $followUpRequest->doctor_name,
-                        'state' => $followUpRequest->state
-                    ],
-
-                    // Device Details
-                    'device_details' => [
-                        'therapy_type' => $followUpRequest->patient->implant->therapy_name,
-                        'ipg_device_type' => $followUpRequest->patient->implant->device_name,
-                        'ipg_model_name' => $followUpRequest->patient->implant->ipg_model,
-                        'ipg_model_number' => $followUpRequest->patient->implant->ipg_model_number,
-                        'ipg_serial_number' => $followUpRequest->patient->implant->ipg_serial_number
-                    ],
-
-                    // Patient Details
-                    'patient_details' => [
-                        'patient_name' => $followUpRequest->patient->name,
-                        'patient_phone' => $followUpRequest->patient->phone_number,
-                        'patient_email' => $followUpRequest->patient->email
-                    ],
-
-                    // Accompanying Person Details
-                    'accompanying_person_details' => [
-                        'name' => $followUpRequest->accompanying_person_name,
-                        'phone' => $followUpRequest->accompanying_person_phone
-                    ]
-                ]
+                'has_implant' => $hasImplant,
+                'data' => $responseData
             ], 200);
 
         } catch (\Exception $e) {
@@ -504,7 +514,121 @@ class FollowUpController extends Controller
         }
     }
 
+    public function getAllActionables(Request $request)
+    {
+        try {
+            $serviceEngineerId = $request->user()->id;
 
+            // Get follow-up requests assigned to this service engineer
+            $followUpRequests = FollowUpRequest::with(['patient'])
+                ->where('service_engineer_id', $serviceEngineerId)
+                ->whereIn('status', [FollowUpRequest::STATUS_APPROVED, FollowUpRequest::STATUS_PENDING])
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'follow-up',
+                        'patient_name' => $request->patient->name,
+                        'hospital_name' => $request->hospital_name ?? 'Not specified',
+                        'ticket_type' => 'Follow-up Service',
+                        'status' => 'pending',
+                        'appointment_datetime' => $request->appointment_datetime,
+                        'created_at' => $request->created_at->toDateTimeString()
+                    ];
+                });
+
+            // Get replacement requests assigned to this service engineer
+            // Added where clause to only include incomplete services
+            $replacementRequests = \App\Models\DeviceReplacement::with(['patient'])
+                ->where('service_engineer_id', $serviceEngineerId)
+                ->whereIn('status', ['approved', 'pending'])
+                ->where('service_completed', false)  // Only get replacements that haven't been completed
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'replacement',
+                        'patient_name' => $request->patient->name,
+                        'hospital_name' => $request->hospital_name ?? 'Not specified',
+                        'ticket_type' => $request->is_warranty_claim ? 'Warranty Replacement' : 'Paid Replacement',
+                        'status' => 'pending',
+                        'created_at' => $request->created_at->toDateTimeString()
+                    ];
+                });
+
+            // Combine and sort all actionables by creation date (newest first)
+            $allActionables = array_merge($followUpRequests->toArray(), $replacementRequests->toArray());
+            usort($allActionables, function ($a, $b) {
+                return strtotime($b['created_at']) - strtotime($a['created_at']);
+            });
+
+            return response()->json([
+                'message' => 'Service engineer actionables retrieved successfully',
+                'data' => [
+                    'total_actionables' => count($allActionables),
+                    'follow_up_requests' => $followUpRequests->count(),
+                    'replacement_requests' => $replacementRequests->count(),
+                    'actionables' => $allActionables
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving actionable requests',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+    /**
+     * Get all IPG serial numbers assigned to this service engineer through device replacements
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getAssignedIpgSerials(Request $request)
+    {
+        try {
+            $serviceEngineerId = $request->user()->id;
+
+            // Get all device replacements assigned to this service engineer
+            $replacements = \App\Models\DeviceReplacement::with(['patient', 'implant'])
+                ->where('service_engineer_id', $serviceEngineerId)
+                ->whereNotNull('new_ipg_serial_number')
+                ->get();
+
+            // Extract the IPG serial numbers
+            $serialNumbers = $replacements->map(function ($replacement) {
+                return [
+                    'id' => $replacement->id,
+                    // 'old_ipg_serial' => $replacement->implant->ipg_serial_number,
+                    'new_ipg_serial' => $replacement->new_ipg_serial_number,
+                    // 'patient_name' => $replacement->patient->name,
+                    // 'hospital_name' => $replacement->hospital_name,
+                    // 'status' => $replacement->service_completed ? 'Completed' : 'Pending',
+                    // 'created_at' => $replacement->created_at->format('Y-m-d H:i:s')
+                ];
+            });
+
+            return response()->json([
+                'message' => 'Assigned IPG serial numbers retrieved successfully',
+                'count' => $serialNumbers->count(),
+                'data' => $serialNumbers
+            ], 200);
+
+        } catch (\Exception $e) {
+            \Log::error('Error retrieving assigned IPG serials', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'message' => 'Error retrieving assigned IPG serial numbers',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
 
     //         public function createFollowUpRequest(Request $request)

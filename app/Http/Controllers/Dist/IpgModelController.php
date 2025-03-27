@@ -297,28 +297,28 @@ class IpgModelController extends Controller
     {
         $perPage = $request->input('per_page', 15);
         $page = $request->input('page', 1);
-        
+
         $query = IpgSerial::with(['ipgModel:model_number,model_name,device_type,warranty', 'distributor:id,name'])
             ->select('id', 'ipg_serial_number', 'model_number', 'distributor_id', 'created_at')
             ->orderBy('created_at', 'desc');
-        
+
         // Filter by serial number if provided
         if ($request->has('search')) {
             $query->where('ipg_serial_number', 'like', '%' . $request->search . '%');
         }
-        
+
         // Filter by model number if provided
         if ($request->has('model_number')) {
             $query->where('model_number', $request->model_number);
         }
-        
+
         // Filter by distributor if provided
         if ($request->has('distributor_id')) {
             $query->where('distributor_id', $request->distributor_id);
         }
-        
+
         $serials = $query->paginate($perPage);
-        
+
         // Transform the data
         $transformedSerials = $serials->through(function ($serial) {
             return [
@@ -333,7 +333,7 @@ class IpgModelController extends Controller
                 'created_at' => $serial->created_at,
             ];
         });
-    
+
         return response()->json([
             'success' => true,
             'serials' => $transformedSerials->items(),
@@ -568,6 +568,118 @@ class IpgModelController extends Controller
             ]
         ]);
     }
+
+
+    public function searchSerials(Request $request)
+    {
+        try {
+            $query = IpgSerial::select('id', 'ipg_serial_number', 'model_number')
+                ->with('ipgModel:model_number,model_name,device_type');
+
+            // Search term
+            if ($request->has('search')) {
+                $searchTerm = $request->search;
+                $query->where('ipg_serial_number', 'like', "%{$searchTerm}%");
+            }
+
+            // Limit results (default 10)
+            $limit = $request->input('limit', 10);
+            $serials = $query->limit($limit)->get();
+
+            // Format for dropdown
+            $formattedSerials = $serials->map(function ($serial) {
+                $modelInfo = $serial->ipgModel ?
+                    " ({$serial->ipgModel->model_name} - {$serial->ipgModel->device_type})" :
+                    "";
+
+                return [
+                    'id' => $serial->id,
+                    'value' => $serial->ipg_serial_number,
+                    'label' => $serial->ipg_serial_number . $modelInfo,
+                    // Additional model information
+                    'model_number' => $serial->model_number,
+                    'model_name' => $serial->ipgModel ? $serial->ipgModel->model_name : null,
+                    'device_type' => $serial->ipgModel ? $serial->ipgModel->device_type : null
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $formattedSerials
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to search IPG serials',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+
+    /**
+     * Search for available IPG serials that haven't been used in implants
+     */
+    public function searchAvailableSerials(Request $request)
+    {
+        try {
+            // Start with the same query as before
+            $query = IpgSerial::select('id', 'ipg_serial_number', 'model_number')
+                ->with('ipgModel:model_number,model_name,device_type');
+
+            // Add a condition to exclude serials that exist in implants
+            $query->whereNotExists(function ($query) {
+                $query->select(\DB::raw(1))
+                    ->from('implants')
+                    ->whereColumn('implants.ipg_serial_number', 'ipg_serials.ipg_serial_number');
+            });
+
+            // Search term
+            if ($request->has('search')) {
+                $searchTerm = $request->search;
+                $query->where('ipg_serial_number', 'like', "%{$searchTerm}%");
+            }
+
+            // Limit results (default 10)
+            $limit = $request->input('limit', 10);
+            $serials = $query->limit($limit)->get();
+
+            // Format for dropdown (same as original)
+            $formattedSerials = $serials->map(function ($serial) {
+                $modelInfo = $serial->ipgModel ?
+                    " ({$serial->ipgModel->model_name} - {$serial->ipgModel->device_type})" :
+                    "";
+
+                return [
+                    'id' => $serial->id,
+                    'value' => $serial->ipg_serial_number,
+                    'label' => $serial->ipg_serial_number . $modelInfo,
+                    // Additional model information
+                    'model_number' => $serial->model_number,
+                    'model_name' => $serial->ipgModel ? $serial->ipgModel->model_name : null,
+                    'device_type' => $serial->ipgModel ? $serial->ipgModel->device_type : null
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $formattedSerials
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to search available IPG serials',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+
+
+
+
 
 }
 

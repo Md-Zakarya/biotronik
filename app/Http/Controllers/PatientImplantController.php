@@ -11,6 +11,8 @@ use App\Models\DeviceReplacement;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use App\Models\PendingImplant;
+
 
 class PatientImplantController extends Controller
 {
@@ -368,16 +370,731 @@ class PatientImplantController extends Controller
 
 
 
+
+    /**
+     * Update patient and relative information
+     */
+    public function updatePatientInfo(Request $request)
+    {
+        $requestId = uniqid('req_');
+        Log::info("[$requestId] Starting patient information update process", [
+            'user_id' => $request->user() ? $request->user()->id : 'no user',
+            'request_method' => $request->method(),
+            'request_ip' => $request->ip()
+        ]);
+
+        try {
+            $user = $request->user();
+            Log::info("[$requestId] User retrieved", ['user_id' => $user->id, 'email' => $user->email]);
+
+            Log::info("[$requestId] Starting validation for patient info");
+            $validated = $request->validate([
+                // Basic patient fields (all optional)
+                'name' => 'sometimes|string|max:255',
+                'date_of_birth' => 'sometimes|date',
+                'gender' => 'sometimes|in:Male,Female,Other',
+                'address' => 'sometimes|string',
+                'state' => 'sometimes|string',
+                'city' => 'sometimes|string',
+                'pin_code' => 'sometimes|string',
+
+                // Relative information (all optional)
+                'relative_name' => 'sometimes|string|max:255',
+                'relative_relation' => 'sometimes|string',
+                'relative_gender' => 'sometimes|in:Male,Female,Other',
+                'relative_address' => 'sometimes|string',
+                'relative_state' => 'sometimes|string',
+                'relative_city' => 'sometimes|string',
+                'relative_pin_code' => 'sometimes|string',
+                'relative_email' => 'sometimes|nullable|email',
+                'relative_phone' => 'sometimes|string',
+            ]);
+
+            Log::info("[$requestId] Patient information validation successful");
+
+            // Prepare update data with only the fields that were provided
+            $updateData = [];
+
+            // Handle patient photo if provided
+            if ($request->hasFile('patient_photo')) {
+                $updateData['patient_photo'] = $request->file('patient_photo');
+            }
+
+            // Add all validated fields to the update data
+            foreach ($validated as $key => $value) {
+                $updateData[$key] = $value;
+            }
+
+            // Update patient information with only the provided fields
+            $user->update($updateData);
+
+            Log::info("[$requestId] Patient information updated successfully", [
+                'user_id' => $user->id,
+                'updated_fields' => array_keys($updateData)
+            ]);
+
+            return response()->json([
+                'message' => 'Patient information updated successfully',
+                'patient' => $user
+            ], 200);
+
+        } catch (ValidationException $e) {
+            Log::error("[$requestId] Validation error", [
+                'errors' => $e->errors(),
+            ]);
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error("[$requestId] Error updating patient information", [
+                'error_message' => $e->getMessage(),
+                'error_trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+
+            return response()->json([
+                'message' => 'Error updating patient information',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Register or link an implant to the patient
+     */
+
+      /**
+     * Register or link an implant to the patient
+     */
+    public function registerImplant(Request $request)
+    {
+        $requestId = uniqid('req_');
+        Log::info("[$requestId] Starting implant registration process", [
+            'user_id' => $request->user() ? $request->user()->id : 'no user',
+            'request_method' => $request->method(),
+            'request_ip' => $request->ip()
+        ]);
+
+        try {
+            $user = $request->user();
+            Log::info("[$requestId] User retrieved", ['user_id' => $user->id, 'email' => $user->email]);
+
+            Log::info("[$requestId] Starting validation for implant");
+            $validated = $request->validate([
+                // Common fields
+                'pre_feb_2022' => 'required|boolean',
+                'ipg_serial_number' => 'required|string',
+                'secret_key' => [
+                    'nullable',
+                    Rule::exists('implants', 'secret_key')->where(function ($query) use ($request) {
+                        $query->where('ipg_serial_number', $request->ipg_serial_number);
+                    }),
+                ],
+
+                // Conditional validation based on pre_feb_2022
+                'ipg_model_number' => 'required_if:pre_feb_2022,1|string|nullable',
+                'implantation_date' => 'required_if:pre_feb_2022,1|date|nullable',
+                'ipg_model' => 'required_if:pre_feb_2022,1|string|nullable',
+                'hospital_state' => 'required_if:pre_feb_2022,1|string|nullable',
+                'hospital_name' => 'required_if:pre_feb_2022,1|string|nullable',
+                'doctor_name' => 'required_if:pre_feb_2022,1|string|nullable',
+                'channel_partner' => 'required_if:pre_feb_2022,1|string|nullable',
+                'therapy_name' => 'required_if:pre_feb_2022,1|string|nullable',
+                'device_name' => 'required_if:pre_feb_2022,1|string|nullable',
+                'patient_id_card' => 'required_if:pre_feb_2022,1|file|nullable',
+                'warranty_card' => 'required_if:pre_feb_2022,1|file|nullable',
+                'interrogation_report' => 'required_if:pre_feb_2022,1|file|nullable',
+
+                // New validation for ra_rv_leads
+                'ra_rv_leads' => 'nullable|array',
+                'ra_rv_leads.*.model' => 'required_with:ra_rv_leads|string',
+                'ra_rv_leads.*.serial' => 'required_with:ra_rv_leads|string',
+
+                'has_ra_rv_lead' => 'nullable|boolean',
+                'has_extra_lead' => 'nullable|boolean',
+                'csp_lead_model' => 'nullable|string',
+                'csp_catheter_model' => 'nullable|string',
+                'csp_lead_serial' => 'nullable|string',
+            ]);
+
+            Log::info("[$requestId] Implant validation successful");
+
+            // Log key request data for debugging
+            $logData = [
+                'ipg_serial_number' => $validated['ipg_serial_number'],
+                'pre_feb_2022' => $validated['pre_feb_2022'] ? 'Yes' : 'No',
+                'has_ra_rv_lead' => $request->has('has_ra_rv_lead') ? $validated['has_ra_rv_lead'] ? 'Yes' : 'No' : 'Not provided',
+                'has_extra_lead' => $request->has('has_extra_lead') ? $validated['has_extra_lead'] ? 'Yes' : 'No' : 'Not provided'
+            ];
+
+            if ($request->has('ra_rv_leads')) {
+                $logData['ra_rv_leads_count'] = is_array($validated['ra_rv_leads']) ? count($validated['ra_rv_leads']) : 'Not an array';
+                $logData['ra_rv_leads'] = $validated['ra_rv_leads'];
+            } else {
+                $logData['ra_rv_leads'] = 'Not provided';
+            }
+
+            Log::info("[$requestId] Request data", $logData);
+
+            if ($validated['pre_feb_2022']) {
+                Log::info("[$requestId] Processing pre-Feb 2022 implant for admin approval", ['ipg_serial' => $validated['ipg_serial_number']]);
+
+                // Check if there's already a pending request for this serial number for this patient
+                $existingPending = PendingImplant::where('patient_id', $user->id)
+                    ->where('ipg_serial_number', $validated['ipg_serial_number'])
+                    ->where('status', 'pending')
+                    ->first();
+
+                if ($existingPending) {
+                    Log::info("[$requestId] Found existing pending request for this implant", [
+                        'pending_id' => $existingPending->id,
+                        'created_at' => $existingPending->created_at
+                    ]);
+
+                    return response()->json([
+                        'message' => 'You already have a pending request for this implant',
+                        'pending_implant_id' => $existingPending->id,
+                        'submitted_at' => $existingPending->created_at
+                    ], 409); // Conflict
+                }
+
+                // Prepare data for pending implant
+                $pendingImplantData = [
+                    'patient_id' => $user->id,
+                    'pre_feb_2022' => true,
+                    'ipg_serial_number' => $validated['ipg_serial_number'],
+                    'implantation_date' => $validated['implantation_date'],
+                    'ipg_model' => $validated['ipg_model'],
+                    'ipg_model_number' => $validated['ipg_model_number'],
+                    'hospital_state' => $validated['hospital_state'],
+                    'hospital_name' => $validated['hospital_name'],
+                    'doctor_name' => $validated['doctor_name'],
+                    'channel_partner' => $validated['channel_partner'],
+                    'therapy_name' => $validated['therapy_name'],
+                    'device_name' => $validated['device_name'],
+                    'has_ra_rv_lead' => $validated['has_ra_rv_lead'] ?? null,
+                    'has_extra_lead' => $validated['has_extra_lead'] ?? null,
+                    'csp_lead_model' => $validated['csp_lead_model'] ?? null,
+                    'csp_catheter_model' => $validated['csp_catheter_model'] ?? null,
+                    'csp_lead_serial' => $validated['csp_lead_serial'] ?? null,
+                    'lead_brand' => 'Biotronik',
+                    'status' => 'pending'
+                ];
+
+                // Store file uploads if provided
+                // if ($request->hasFile('patient_id_card')) {
+                //     $pendingImplantData['patient_id_card'] = $request->file('patient_id_card')
+                //         ->store('patient_documents', 'public');
+                // }
+                
+                // if ($request->hasFile('warranty_card')) {
+                //     $pendingImplantData['warranty_card'] = $request->file('warranty_card')
+                //         ->store('patient_documents', 'public');
+                // }
+                
+                // if ($request->hasFile('interrogation_report')) {
+                //     $pendingImplantData['interrogation_report'] = $request->file('interrogation_report')
+                //         ->store('patient_documents', 'public');
+                // }
+
+                // Handle ra_rv_leads as JSON
+                if ($request->has('ra_rv_leads') && is_array($validated['ra_rv_leads']) && count($validated['ra_rv_leads']) > 0) {
+                    Log::info("[$requestId] Using ra_rv_leads array from request", [
+                        'count' => count($validated['ra_rv_leads']),
+                        'data' => $validated['ra_rv_leads']
+                    ]);
+                    $pendingImplantData['ra_rv_leads'] = $validated['ra_rv_leads'];
+                }
+                // For backward compatibility, convert individual fields to JSON if provided
+                elseif ($request->has('ra_rv_lead_model') && isset($validated['ra_rv_lead_model'])) {
+                    Log::info("[$requestId] Using legacy ra_rv_lead_model field", [
+                        'model' => $validated['ra_rv_lead_model'],
+                        'serial' => $validated['ra_rv_lead_serial'] ?? 'Unknown'
+                    ]);
+
+                    $pendingImplantData['ra_rv_leads'] = [
+                        [
+                            'model' => $validated['ra_rv_lead_model'],
+                            'serial' => $validated['ra_rv_lead_serial'] ?? 'Unknown'
+                        ]
+                    ];
+                } else {
+                    Log::info("[$requestId] No RA/RV lead information provided");
+                }
+
+                // Create pending implant record
+                $pendingImplant = PendingImplant::create($pendingImplantData);
+
+                Log::info("[$requestId] Pre-Feb 2022 implant submitted for admin approval", [
+                    'pending_implant_id' => $pendingImplant->id,
+                    'ipg_serial' => $pendingImplant->ipg_serial_number
+                ]);
+
+                // Here you could implement admin notification
+                // E.g., Mail::to('admin@example.com')->send(new NewPendingImplantNotification($pendingImplant));
+
+                return response()->json([
+                    'message' => 'Pre-February 2022 implant registration submitted for admin approval',
+                    'pending_implant_id' => $pendingImplant->id,
+                    'status' => 'pending'
+                ], 202); // 202 Accepted
+            } else {
+                // Continue with your existing post-Feb 2022 implant logic (unchanged)
+                Log::info("[$requestId] Processing post-Feb 2022 implant linking", [
+                    'ipg_serial' => $validated['ipg_serial_number'],
+                    'lead_brand' => 'Biotronik'
+                ]);
+
+                // Handle post-Feb 2022 implant linking
+                $existingImplant = Implant::where('ipg_serial_number', $validated['ipg_serial_number'])->first();
+
+                if (!$existingImplant) {
+                    Log::info("[$requestId] No existing implant found, creating new record", [
+                        'ipg_serial' => $validated['ipg_serial_number']
+                    ]);
+
+                    // Create new implant record
+                    $implantData = [
+                        'ipg_serial_number' => $validated['ipg_serial_number'],
+                        'secret_key' => $validated['secret_key'],
+                        'patient_id' => $user->id,
+                        'pre_feb_2022' => false,
+                        'implantation_date' => now(),
+                        'warranty_expired_at' => now()->addYear(),
+                        'lead_brand' => 'Biotronik'
+                    ];
+
+                    // Add ra_rv_leads if provided
+                    if ($request->has('ra_rv_leads') && is_array($validated['ra_rv_leads'])) {
+                        Log::info("[$requestId] Adding ra_rv_leads to new implant", [
+                            'leads_data' => $validated['ra_rv_leads']
+                        ]);
+                        $implantData['ra_rv_leads'] = $validated['ra_rv_leads'];
+                    }
+
+                    $implant = Implant::create($implantData);
+                    Log::info("[$requestId] New implant created successfully", [
+                        'implant_id' => $implant->id,
+                        'ipg_serial' => $implant->ipg_serial_number
+                    ]);
+
+                    $message = 'New implant registered successfully';
+
+                    Log::info("[$requestId] Returning successful response for new implant", [
+                        'status' => 201,
+                        'implant_id' => $implant->id
+                    ]);
+
+                    return response()->json([
+                        'message' => $message,
+                        'implant' => $implant
+                    ], 201);
+                }
+
+                Log::info("[$requestId] Existing implant found", [
+                    'implant_id' => $existingImplant->id,
+                    'current_patient_id' => $existingImplant->patient_id
+                ]);
+
+                if ($existingImplant->patient_id !== null) {
+                    Log::warning("[$requestId] Implant already associated with a patient", [
+                        'implant_id' => $existingImplant->id,
+                        'existing_patient_id' => $existingImplant->patient_id,
+                        'requesting_patient_id' => $user->id
+                    ]);
+
+                    return response()->json([
+                        'message' => 'Implant is already associated with another patient'
+                    ], 400);
+                }
+
+                Log::info("[$requestId] Linking existing implant to patient", [
+                    'implant_id' => $existingImplant->id,
+                    'patient_id' => $user->id
+                ]);
+
+                $existingImplant->patient_id = $user->id;
+
+                // Update ra_rv_leads if provided
+                if ($request->has('ra_rv_leads') && is_array($validated['ra_rv_leads'])) {
+                    Log::info("[$requestId] Updating ra_rv_leads for existing implant", [
+                        'leads_data' => $validated['ra_rv_leads']
+                    ]);
+                    $existingImplant->ra_rv_leads = $validated['ra_rv_leads'];
+                }
+
+                $existingImplant->save();
+                Log::info("[$requestId] Existing implant updated successfully");
+
+                $implant = $existingImplant;
+                $message = 'Existing implant linked to patient successfully';
+                
+                return response()->json([
+                    'message' => $message,
+                    'implant' => $implant
+                ], 201);
+            }
+
+        } catch (ValidationException $e) {
+            Log::error("[$requestId] Validation error", [
+                'errors' => $e->errors(),
+            ]);
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error("[$requestId] Error during implant registration", [
+                'error_message' => $e->getMessage(),
+                'error_trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+
+            return response()->json([
+                'message' => 'Error registering implant',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    public function registerImplant0(Request $request)
+    {
+        $requestId = uniqid('req_');
+        Log::info("[$requestId] Starting implant registration process", [
+            'user_id' => $request->user() ? $request->user()->id : 'no user',
+            'request_method' => $request->method(),
+            'request_ip' => $request->ip()
+        ]);
+
+        try {
+            $user = $request->user();
+            Log::info("[$requestId] User retrieved", ['user_id' => $user->id, 'email' => $user->email]);
+
+            Log::info("[$requestId] Starting validation for implant");
+            $validated = $request->validate([
+                // Common fields
+                'pre_feb_2022' => 'required|boolean',
+                'ipg_serial_number' => 'required|string',
+                'secret_key' => [
+                    'nullable',
+                    Rule::exists('implants', 'secret_key')->where(function ($query) use ($request) {
+                        $query->where('ipg_serial_number', $request->ipg_serial_number);
+                    }),
+                ],
+
+                // Conditional validation based on pre_feb_2022
+                'ipg_model_number' => 'required_if:pre_feb_2022,1|string|nullable',
+                'implantation_date' => 'required_if:pre_feb_2022,1|date|nullable',
+                'ipg_model' => 'required_if:pre_feb_2022,1|string|nullable',
+                'hospital_state' => 'required_if:pre_feb_2022,1|string|nullable',
+                'hospital_name' => 'required_if:pre_feb_2022,1|string|nullable',
+                'doctor_name' => 'required_if:pre_feb_2022,1|string|nullable',
+                'channel_partner' => 'required_if:pre_feb_2022,1|string|nullable',
+                'therapy_name' => 'required_if:pre_feb_2022,1|string|nullable',
+                'device_name' => 'required_if:pre_feb_2022,1|string|nullable',
+                'patient_id_card' => 'required_if:pre_feb_2022,1|file|nullable',
+                'warranty_card' => 'required_if:pre_feb_2022,1|file|nullable',
+                'interrogation_report' => 'required_if:pre_feb_2022,1|file|nullable',
+
+                // New validation for ra_rv_leads
+                'ra_rv_leads' => 'nullable|array',
+                'ra_rv_leads.*.model' => 'required_with:ra_rv_leads|string',
+                'ra_rv_leads.*.serial' => 'required_with:ra_rv_leads|string',
+
+                'has_ra_rv_lead' => 'nullable|boolean',
+                'has_extra_lead' => 'nullable|boolean',
+                'csp_lead_model' => 'nullable|string',
+                'csp_catheter_model' => 'nullable|string',
+                'csp_lead_serial' => 'nullable|string',
+            ]);
+
+            Log::info("[$requestId] Implant validation successful");
+
+            // Log key request data for debugging
+            $logData = [
+                'ipg_serial_number' => $validated['ipg_serial_number'],
+                'pre_feb_2022' => $validated['pre_feb_2022'] ? 'Yes' : 'No',
+                'has_ra_rv_lead' => $request->has('has_ra_rv_lead') ? $validated['has_ra_rv_lead'] ? 'Yes' : 'No' : 'Not provided',
+                'has_extra_lead' => $request->has('has_extra_lead') ? $validated['has_extra_lead'] ? 'Yes' : 'No' : 'Not provided'
+            ];
+
+            if ($request->has('ra_rv_leads')) {
+                $logData['ra_rv_leads_count'] = is_array($validated['ra_rv_leads']) ? count($validated['ra_rv_leads']) : 'Not an array';
+                $logData['ra_rv_leads'] = $validated['ra_rv_leads'];
+            } else {
+                $logData['ra_rv_leads'] = 'Not provided';
+            }
+
+            Log::info("[$requestId] Request data", $logData);
+
+            if ($validated['pre_feb_2022']) {
+                Log::info("[$requestId] Processing pre-Feb 2022 implant", ['ipg_serial' => $validated['ipg_serial_number']]);
+
+                // Handle pre-Feb 2022 implant creation
+                $implantData = [
+                    'pre_feb_2022' => true,
+                    'ipg_serial_number' => $validated['ipg_serial_number'],
+                    'implantation_date' => $validated['implantation_date'],
+                    'ipg_model' => $validated['ipg_model'],
+                    'ipg_model_number' => $validated['ipg_model_number'],
+                    'hospital_state' => $validated['hospital_state'],
+                    'hospital_name' => $validated['hospital_name'],
+                    'doctor_name' => $validated['doctor_name'],
+                    'channel_partner' => $validated['channel_partner'],
+                    'therapy_name' => $validated['therapy_name'],
+                    'device_name' => $validated['device_name'],
+                    'has_ra_rv_lead' => $validated['has_ra_rv_lead'] ?? null,
+                    'has_extra_lead' => $validated['has_extra_lead'] ?? null,
+                    'csp_lead_model' => $validated['csp_lead_model'] ?? null,
+                    'csp_catheter_model' => $validated['csp_catheter_model'] ?? null,
+                    'csp_lead_serial' => $validated['csp_lead_serial'] ?? null,
+                    // 'warranty_expired_at' => Carbon::parse($validated['implantation_date'])->addMonths(3),
+                    'warranty_expired_at' => Carbon::parse($validated['implantation_date'])->addYear(),
+                    'lead_brand' => 'Biotronik'
+                ];
+
+                Log::debug("[$requestId] Base implant data prepared", [
+                    'data' => array_diff_key($implantData, ['ra_rv_leads' => ''])
+                ]);
+
+                // Handle ra_rv_leads as JSON
+                if ($request->has('ra_rv_leads') && is_array($validated['ra_rv_leads']) && count($validated['ra_rv_leads']) > 0) {
+                    Log::info("[$requestId] Using ra_rv_leads array from request", [
+                        'count' => count($validated['ra_rv_leads']),
+                        'data' => $validated['ra_rv_leads']
+                    ]);
+                    $implantData['ra_rv_leads'] = $validated['ra_rv_leads'];
+                }
+                // For backward compatibility, convert individual fields to JSON if provided
+                elseif ($request->has('ra_rv_lead_model') && $validated['ra_rv_lead_model']) {
+                    Log::info("[$requestId] Using legacy ra_rv_lead_model field", [
+                        'model' => $validated['ra_rv_lead_model'],
+                        'serial' => $validated['ra_rv_lead_serial'] ?? 'Unknown'
+                    ]);
+
+                    $implantData['ra_rv_leads'] = [
+                        [
+                            'model' => $validated['ra_rv_lead_model'],
+                            'serial' => $validated['ra_rv_lead_serial'] ?? 'Unknown'
+                        ]
+                    ];
+                } else {
+                    Log::info("[$requestId] No RA/RV lead information provided");
+                }
+
+                Log::info("[$requestId] Creating implant record for user", [
+                    'user_id' => $user->id,
+                    'ipg_serial' => $implantData['ipg_serial_number']
+                ]);
+
+                $implant = $user->implant()->create($implantData);
+
+                Log::info("[$requestId] Implant record created successfully", [
+                    'implant_id' => $implant->id,
+                    'ipg_serial' => $implant->ipg_serial_number
+                ]);
+
+                $message = 'Patient and implant information saved successfully';
+            } else {
+                Log::info("[$requestId] Processing post-Feb 2022 implant linking", [
+                    'ipg_serial' => $validated['ipg_serial_number'],
+                    'lead_brand' => 'Biotronik'
+                ]);
+
+                // Handle post-Feb 2022 implant linking
+                $existingImplant = Implant::where('ipg_serial_number', $validated['ipg_serial_number'])->first();
+
+                if (!$existingImplant) {
+                    Log::info("[$requestId] No existing implant found, creating new record", [
+                        'ipg_serial' => $validated['ipg_serial_number']
+                    ]);
+
+                    // Create new implant record
+                    $implantData = [
+                        'ipg_serial_number' => $validated['ipg_serial_number'],
+                        'secret_key' => $validated['secret_key'],
+                        'patient_id' => $user->id,
+                        'pre_feb_2022' => false,
+                        'implantation_date' => now(),
+                        'warranty_expired_at' => now()->addYear(),
+                        'lead_brand' => 'Biotronik'
+                    ];
+
+                    // Add ra_rv_leads if provided
+                    if ($request->has('ra_rv_leads') && is_array($validated['ra_rv_leads'])) {
+                        Log::info("[$requestId] Adding ra_rv_leads to new implant", [
+                            'leads_data' => $validated['ra_rv_leads']
+                        ]);
+                        $implantData['ra_rv_leads'] = $validated['ra_rv_leads'];
+                    }
+
+                    $implant = Implant::create($implantData);
+                    Log::info("[$requestId] New implant created successfully", [
+                        'implant_id' => $implant->id,
+                        'ipg_serial' => $implant->ipg_serial_number
+                    ]);
+
+                    $message = 'New implant registered successfully';
+
+                    Log::info("[$requestId] Returning successful response for new implant", [
+                        'status' => 201,
+                        'implant_id' => $implant->id
+                    ]);
+
+                    return response()->json([
+                        'message' => $message,
+                        'implant' => $implant
+                    ], 201);
+                }
+
+                Log::info("[$requestId] Existing implant found", [
+                    'implant_id' => $existingImplant->id,
+                    'current_patient_id' => $existingImplant->patient_id
+                ]);
+
+                if ($existingImplant->patient_id !== null) {
+                    Log::warning("[$requestId] Implant already associated with a patient", [
+                        'implant_id' => $existingImplant->id,
+                        'existing_patient_id' => $existingImplant->patient_id,
+                        'requesting_patient_id' => $user->id
+                    ]);
+
+                    return response()->json([
+                        'message' => 'Implant is already associated with another patient'
+                    ], 400);
+                }
+
+                Log::info("[$requestId] Linking existing implant to patient", [
+                    'implant_id' => $existingImplant->id,
+                    'patient_id' => $user->id
+                ]);
+
+                $existingImplant->patient_id = $user->id;
+
+                // Update ra_rv_leads if provided
+                if ($request->has('ra_rv_leads') && is_array($validated['ra_rv_leads'])) {
+                    Log::info("[$requestId] Updating ra_rv_leads for existing implant", [
+                        'leads_data' => $validated['ra_rv_leads']
+                    ]);
+                    $existingImplant->ra_rv_leads = $validated['ra_rv_leads'];
+                }
+
+                $existingImplant->save();
+                Log::info("[$requestId] Existing implant updated successfully");
+
+                $implant = $existingImplant;
+                $message = 'Existing implant linked to patient successfully';
+            }
+
+            Log::info("[$requestId] Registration process completed successfully", [
+                'patient_id' => $user->id,
+                'implant_id' => $implant->id
+            ]);
+
+            return response()->json([
+                'message' => $message,
+                'implant' => $implant
+            ], 201);
+
+        } catch (ValidationException $e) {
+            Log::error("[$requestId] Validation error", [
+                'errors' => $e->errors(),
+            ]);
+            throw $e;
+        } catch (\Exception $e) {
+            Log::error("[$requestId] Error during implant registration", [
+                'error_message' => $e->getMessage(),
+                'error_trace' => $e->getTraceAsString(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
+
+            return response()->json([
+                'message' => 'Error registering implant',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
     public function checkIfPatientHasImplant(Request $request)
     {
         try {
             $user = $request->user();
 
+            // Get user profile data
+            $profileData = [
+                'id' => $user->id,
+                'name' => $user->name,
+                'date_of_birth' => $user->date_of_birth,
+                'gender' => $user->gender,
+                'address' => $user->address,
+                'state' => $user->state,
+                'city' => $user->city,
+                'pin_code' => $user->pin_code,
+                'email' => $user->email,
+                'phone_number' => $user->phone_number,
+                'patient_photo' => $user->patient_photo,
+
+                // Relative information
+                'relative_name' => $user->relative_name,
+                'relative_relation' => $user->relative_relation,
+                'relative_gender' => $user->relative_gender,
+                'relative_address' => $user->relative_address,
+                'relative_state' => $user->relative_state,
+                'relative_city' => $user->relative_city,
+                'relative_pin_code' => $user->relative_pin_code,
+                'relative_email' => $user->relative_email,
+                'relative_phone' => $user->relative_phone,
+            ];
+
+            // Check if basic profile fields are filled
+            $requiredProfileFields = [
+                'name',
+                'date_of_birth',
+                'gender',
+                'address',
+                'state',
+                'city',
+                'pin_code'
+            ];
+
+            $basicProfileComplete = true;
+            foreach ($requiredProfileFields as $field) {
+                if (empty($profileData[$field])) {
+                    $basicProfileComplete = false;
+                    break;
+                }
+            }
+
+            // Check if relative information is filled
+            $requiredRelativeFields = [
+                'relative_name',
+                'relative_relation',
+                'relative_gender',
+                'relative_address',
+                'relative_state',
+                'relative_city',
+                'relative_pin_code',
+                'relative_phone'
+            ];
+
+            $relativeInfoComplete = true;
+            foreach ($requiredRelativeFields as $field) {
+                if (empty($profileData[$field])) {
+                    $relativeInfoComplete = false;
+                    break;
+                }
+            }
+
+            // Determine overall profile completion status
+            $profileStatus = [
+                'basic_profile_complete' => $basicProfileComplete,
+                'relative_info_complete' => $relativeInfoComplete,
+                'profile_complete' => $basicProfileComplete && $relativeInfoComplete,
+            ];
+
             // Check if user has any implants
             if (!$user->implant()->exists()) {
                 return response()->json([
                     'message' => 'No implants found for this patient',
-                    'has_implant' => false
+                    'has_implant' => false,
+                    'profile_data' => $profileData,
+                    'profile_status' => $profileStatus
                 ], 200);
             }
 
@@ -390,13 +1107,8 @@ class PatientImplantController extends Controller
                     'ipg_model',
                     'ipg_model_number',
                     'implantation_date',
-                    // 'therapy_name',
                     'device_name',
-                    // 'hospital_name',
-                    // 'doctor_name',
                     'active',
-                    // 'warranty_expired_at',
-                    // 'created_at',
                     'implantation_date'
                 ]);
 
@@ -408,7 +1120,9 @@ class PatientImplantController extends Controller
                 'has_implant' => true,
                 'active_implant' => $activeImplant,
                 'all_implants' => $implants,
-                'implant_count' => $implants->count()
+                'implant_count' => $implants->count(),
+                'profile_data' => $profileData,
+                'profile_status' => $profileStatus
             ], 200);
 
         } catch (\Exception $e) {
@@ -557,7 +1271,7 @@ class PatientImplantController extends Controller
                     'warranty_expired_at' => Carbon::parse($request->implantation_date)->addMonths(3),
                     'lead_brand' => 'Biotronik'
                 ];
-                
+
 
                 Log::debug("[$requestId] Base implant data prepared", [
                     'data' => array_diff_key($implantData, ['ra_rv_leads' => ''])
@@ -622,7 +1336,9 @@ class PatientImplantController extends Controller
                         'patient_id' => $user->id,
                         'pre_feb_2022' => false,
                         'implantation_date' => now(),
-                        'warranty_expired_at' => now()->addMonths(3),
+                        // 'warranty_expired_at' => now()->addMonths(3),
+                        //change from 3 months to 1year as perdiscussion
+                        'warranty_expired_at' => now()->addYear(),
                         'lead_brand' => 'Biotronik'
                     ];
 
@@ -818,6 +1534,7 @@ class PatientImplantController extends Controller
             'ra_rv_lead_model' => 'nullable|string',
             'ra_rv_lead_serial' => 'nullable|string',
             'has_ra_rv_lead' => 'nullable|boolean',
+            'state' => 'required|string', 
             'csp_catheter_model' => 'nullable|string',
             'has_extra_lead' => 'nullable|boolean',
             'csp_lead_model' => 'nullable|string',
@@ -825,6 +1542,7 @@ class PatientImplantController extends Controller
             'ra_rv_leads' => 'nullable|array',
             'ra_rv_leads.*.model' => 'required_with:ra_rv_leads|string',
             'ra_rv_leads.*.serial' => 'required_with:ra_rv_leads|string',
+            
         ]);
 
         try {
@@ -840,8 +1558,10 @@ class PatientImplantController extends Controller
                 'therapy_name' => $validated['therapy_name'],
                 'device_name' => $validated['device_name'],
                 'implantation_date' => $validated['implantation_date'],
-                'warranty_expired_at' => Carbon::parse($validated['implantation_date'])->addMonths(3),
+                // 'warranty_expired_at' => Carbon::parse($validated['implantation_date'])->addMonths(3),
+                'warranty_expired_at' => Carbon::parse($validated['implantation_date'])->addYear(),
                 'ipg_model' => $validated['ipg_model'],
+                'hospital_state' => $validated['state'],
                 'ipg_model_number' => $validated['ipg_model_number'],
                 'ra_rv_lead_model' => $validated['ra_rv_lead_model'] ?? null,
                 'ra_rv_lead_serial' => $validated['ra_rv_lead_serial'] ?? null,
@@ -1210,8 +1930,8 @@ class PatientImplantController extends Controller
                     'interrogation_report',
                     'lead_brand',
                     'ra_rv_leads'
-                  
-                   
+
+
                 )
                 ->first();
 
@@ -1261,7 +1981,7 @@ class PatientImplantController extends Controller
                         'interrogation_report' => $implant->interrogation_report,
                         'lead_brand' => $implant->lead_brand,
                         'ra_rv_leads' => $implant->ra_rv_leads,
-                       
+
                     ]
                 ]
             ], 200);
@@ -1367,103 +2087,166 @@ class PatientImplantController extends Controller
 
 
     public function linkPatientToImplant(Request $request)
-{
-    $validated = $request->validate([
-        'ipg_serial_number' => 'required|string|exists:implants,ipg_serial_number',
-        'secret_key' => 'required|string'
-    ]);
+    {
+        $validated = $request->validate([
+            'ipg_serial_number' => 'required|string|exists:implants,ipg_serial_number',
+            'secret_key' => 'required|string'
+        ]);
 
-    try {
-        // Get authenticated patient's ID
-        $patientId = $request->user()->id;
-
-        // Find implants with matching secret key
-        $implants = Implant::where('secret_key', $validated['secret_key'])->get();
-        
-        // Find the specific implant with matching IPG serial number
-        $primaryImplant = $implants->firstWhere('ipg_serial_number', $validated['ipg_serial_number']);
-
-        if (!$primaryImplant) {
-            return response()->json([
-                'message' => 'Invalid IPG serial number or secret key'
-            ], 404);
-        }
-
-        // Check if any of these implants are already linked to a different patient
-        $alreadyLinked = $implants->filter(function($implant) use ($patientId) {
-            return $implant->patient_id !== null && $implant->patient_id != $patientId;
-        })->count() > 0;
-
-        if ($alreadyLinked) {
-            return response()->json([
-                'message' => 'One or more implants with this secret key are already linked to another patient'
-            ], 400);
-        }
-
-        // Begin transaction
-        \DB::beginTransaction();
         try {
-            // Deactivate ALL existing implants for this patient
-            Implant::where('patient_id', $patientId)
-                ->update(['active' => false]);
+            // Get authenticated patient's ID
+            $patientId = $request->user()->id;
 
-            // Find the most recent implant to copy fields from
-            $oldImplant = Implant::where('patient_id', $patientId)
-                ->latest()
-                ->first();
+            // Find implants with matching secret key
+            $implants = Implant::where('secret_key', $validated['secret_key'])->get();
 
-            // Fields to copy from old implant if it exists
-            $fieldsToCopy = [
-                'channel_partner',
-                'has_ra_rv_lead',
-                'has_extra_lead',
-                'patient_id_card',
-                'warranty_card',
-                'interrogation_report'
-            ];
+            // Find the specific implant with matching IPG serial number
+            $primaryImplant = $implants->firstWhere('ipg_serial_number', $validated['ipg_serial_number']);
 
-            // Link all implants with the same secret key to this patient
-            foreach ($implants as $implant) {
-                // Copy fields from old implant if it exists
-                if ($oldImplant) {
-                    foreach ($fieldsToCopy as $field) {
-                        if (isset($oldImplant->$field) && $oldImplant->$field) {
-                            $implant->$field = $oldImplant->$field;
-                        }
-                    }
-                }
-                
-                // Set the implant's patient_id
-                $implant->patient_id = $patientId;
-                
-                // Only the implant with the specified serial number should be active
-                $implant->active = ($implant->ipg_serial_number == $validated['ipg_serial_number']);
-                
-                $implant->save();
+            if (!$primaryImplant) {
+                return response()->json([
+                    'message' => 'Invalid IPG serial number or secret key'
+                ], 404);
             }
 
-            \DB::commit();
+            // Check if any of these implants are already linked to a different patient
+            $alreadyLinked = $implants->filter(function ($implant) use ($patientId) {
+                return $implant->patient_id !== null && $implant->patient_id != $patientId;
+            })->count() > 0;
 
-            return response()->json([
-                'message' => 'Implant(s) linked to patient successfully',
-                'data' => [
-                    'primary_ipg_serial_number' => $primaryImplant->ipg_serial_number,
-                    'total_implants_linked' => $implants->count(),
-                    'previous_implants_deactivated' => $oldImplant ? true : false
-                ]
-            ], 200);
+            if ($alreadyLinked) {
+                return response()->json([
+                    'message' => 'One or more implants with this secret key are already linked to another patient'
+                ], 400);
+            }
+
+            // Begin transaction
+            \DB::beginTransaction();
+            try {
+                // Deactivate ALL existing implants for this patient
+                Implant::where('patient_id', $patientId)
+                    ->update(['active' => false]);
+
+                // Find the most recent implant to copy fields from
+                $oldImplant = Implant::where('patient_id', $patientId)
+                    ->latest()
+                    ->first();
+
+                // Fields to copy from old implant if it exists
+                $fieldsToCopy = [
+                    'channel_partner',
+                    'has_ra_rv_lead',
+                    'has_extra_lead',
+                    'patient_id_card',
+                    'warranty_card',
+                    'interrogation_report'
+                ];
+
+                // Link all implants with the same secret key to this patient
+                foreach ($implants as $implant) {
+                    // Copy fields from old implant if it exists
+                    if ($oldImplant) {
+                        foreach ($fieldsToCopy as $field) {
+                            if (isset($oldImplant->$field) && $oldImplant->$field) {
+                                $implant->$field = $oldImplant->$field;
+                            }
+                        }
+                    }
+
+                    // Set the implant's patient_id
+                    $implant->patient_id = $patientId;
+
+                    // Only the implant with the specified serial number should be active
+                    $implant->active = ($implant->ipg_serial_number == $validated['ipg_serial_number']);
+
+                    $implant->save();
+                }
+
+                \DB::commit();
+
+                return response()->json([
+                    'message' => 'Implant(s) linked to patient successfully',
+                    'data' => [
+                        'primary_ipg_serial_number' => $primaryImplant->ipg_serial_number,
+                        'total_implants_linked' => $implants->count(),
+                        'previous_implants_deactivated' => $oldImplant ? true : false
+                    ]
+                ], 200);
+
+            } catch (\Exception $e) {
+                \DB::rollBack();
+                throw $e;
+            }
 
         } catch (\Exception $e) {
-            \DB::rollBack();
-            throw $e;
+            return response()->json([
+                'message' => 'Error linking implant to patient',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => 'Error linking implant to patient',
-            'error' => $e->getMessage()
-        ], 500);
     }
-}
+
+
+    public function getImplantDetailsBySerial($ipgSerialNumber)
+    {
+        try {
+            $implant = Implant::with(['patient' => function($query) {
+                $query->select('id', 'name', 'email', 'phone_number', 'date_of_birth', 'gender');
+            }])
+            ->where('ipg_serial_number', $ipgSerialNumber)
+            ->first();
+    
+            if (!$implant) {
+                return response()->json([
+                    'message' => 'No implant found with the provided IPG serial number'
+                ], 404);
+            }
+    
+            return response()->json([
+                'message' => 'Implant details retrieved successfully',
+                'data' => [
+                    'implant' => [
+                        'id' => $implant->id,
+                        'ipg_serial_number' => $implant->ipg_serial_number,
+                        'ipg_model' => $implant->ipg_model,
+                        'ipg_model_number' => $implant->ipg_model_number,
+                        'implantation_date' => $implant->implantation_date,
+                        'hospital_name' => $implant->hospital_name,
+                        'hospital_state' => $implant->hospital_state,
+                        'doctor_name' => $implant->doctor_name,
+                        'channel_partner' => $implant->channel_partner,
+                        'therapy_name' => $implant->therapy_name,
+                        'device_name' => $implant->device_name,
+                        'warranty_status' => [
+                            'expired_at' => $implant->warranty_expired_at,
+                            'is_active' => now()->lt($implant->warranty_expired_at)
+                        ],
+                        'active' => $implant->active,
+                        'lead_details' => [
+                            'ra_rv_leads' => $implant->ra_rv_leads,
+                            'has_ra_rv_lead' => $implant->has_ra_rv_lead,
+                            'has_extra_lead' => $implant->has_extra_lead,
+                            'csp_lead_model' => $implant->csp_lead_model,
+                            'csp_lead_serial' => $implant->csp_lead_serial,
+                            'csp_catheter_model' => $implant->csp_catheter_model
+                        ],
+                    ],
+                    'patient' => $implant->patient ? [
+                        'id' => $implant->patient->id,
+                        'name' => $implant->patient->name,
+                        'email' => $implant->patient->email,
+                        'phone_number' => $implant->patient->phone_number,
+                        'date_of_birth' => $implant->patient->date_of_birth,
+                        'gender' => $implant->patient->gender
+                    ] : null
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving implant details',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }
 

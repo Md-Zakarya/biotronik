@@ -342,4 +342,42 @@ class AdminController extends Controller
             ], 500);
         }
     }
+
+    public function getDashboardCounts()
+{
+    try {
+        // Get pending replacement requests count
+        $pendingReplacementsCount = DeviceReplacement::where('status', DeviceReplacement::STATUS_PENDING)->count();
+        
+        // Get pending implants count
+        $pendingImplantsCount = \App\Models\PendingImplant::where('status', 'pending')->count();
+        
+        // Get pending follow-up requests
+        $pendingFollowUpsCount = \App\Models\FollowUpRequest::where('status', \App\Models\FollowUpRequest::STATUS_PENDING)->count();
+        
+        // Total actionables
+        $totalActionables = $pendingReplacementsCount + $pendingImplantsCount + $pendingFollowUpsCount;
+        
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'total_actionables' => $totalActionables,
+                'pending_replacements' => $pendingReplacementsCount,
+                'pending_implants' => $pendingImplantsCount,
+                'pending_follow_ups' => $pendingFollowUpsCount
+            ]
+        ], 200);
+    } catch (\Exception $e) {
+        Log::error('Error fetching dashboard counts', [
+            'error' => $e->getMessage(),
+            'admin_id' => auth()->id()
+        ]);
+        
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Error fetching dashboard counts',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
 }

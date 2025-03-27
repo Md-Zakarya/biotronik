@@ -32,6 +32,8 @@ use App\Http\Controllers\PatientAuth\PatientAuthController;
 // Route::post('/email-login', [AuthController::class, 'login']);
 
 Route::post('/send-otp', [OtpController::class, 'sendOtp']);
+Route::post('/send-login-otp', [OtpController::class, 'sendLoginOtp']);
+Route::post('/send-registration-otp', [OtpController::class, 'sendRegistrationOtp']);
 Route::post('/verify-otp', [OtpController::class, 'verifyOtp']);
 
 // Route::post('/phone-login', [OtpController::class, 'phoneLogin']);
@@ -43,6 +45,10 @@ Route::post('/verify-otp', [OtpController::class, 'verifyOtp']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/patient-implant', [PatientImplantController::class, 'store']);
+    Route::post('/patient/register-profile', [PatientImplantController::class, 'updatePatientInfo']);
+    Route::post('/patient/register-implant', [PatientImplantController::class, 'registerImplant']);
+
+    
 });
 
 
@@ -79,14 +85,18 @@ Route::middleware(['auth:sanctum', 'role:sales-representative'])->group(function
     Route::post('/service-engineer/payment-request', [SEFollowUpController::class, 'createPatientPaymentRequest']);
     Route::post('/service-engineer/make-payment', [SEFollowUpController::class, 'makePayment']);
 
-    Route::get('/service-engineer/payments/{paymentId}', [FollowUpController::class, 'getPaymentStatus']);
+    // Route::get('/service-engineer/payments/{paymentId}', [FollowUpController::class, 'getPaymentStatus']);
 
 
     Route::post('/service-engineer/follow-up-requests', [SEFollowUpController::class, 'createFollowUpRequest']);
 
     Route::get('/service-engineer/patient-details/{phone_number}', [SEFollowUpController::class, 'getPatientDetailsByPhone']);
-    // Route::get('/service-engineer/payments/{paymentId}', [SEFollowUpController::class, 'getPaymentStatus']);
+    Route::get('/service-engineer/payments/{paymentId}', [SEFollowUpController::class, 'getPaymentStatus']);
 
+    Route::get('/service-engineer/actionables', [SEFollowUpController::class, 'getAllActionables']);
+
+    //implant replacement new assigned by the distrubuter
+    Route::get('/service-engineer/assigned-ipg-serials', [SEFollowUpController::class, 'getAssignedIpgSerials']);
 });
 
 
@@ -106,6 +116,10 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::get('/admin-only', function () {
         return response()->json(['message' => 'Admin access only']);
     });
+
+
+    Route::get('/admin/dashboard-counts', [AdminController::class, 'getDashboardCounts']);
+
 
     // Add new employee management routes
     Route::post('/admin/add-employee', [AdminController::class, 'addEmployee']);
@@ -141,9 +155,19 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     Route::post('/admin/lead-serials/assign-distributor', [LeadController::class, 'assignDistributor']);
     Route::get('/admin/leads/export', [LeadController::class, 'exportLeadsCSV']);
     Route::get('/admin/lead-models/export', [LeadController::class, 'exportLeadModelsCSV']);
+
+    Route::get('/admin/your-actionables', [DistController::class, 'listAllPendingItems']);
+    Route::get('/admin/pending-implant/{id}', [DistController::class, 'getPendingImplantDetails']);
+    Route::put('/admin/pending-implants/{id}/approve', [DistController::class, 'approvePendingImplant']);
+    Route::put('/admin/pending-implants/{id}/reject', [DistController::class, 'rejectPendingImplant']);
+
+
+    
+    
 });
 
 Route::middleware(['auth:sanctum', 'role:distributor'])->group(function () {
+    Route::get('/admin/distributors/dashboard-counts', [DistController::class, 'getDashboardCounts']);
     Route::get('/admin/distributors', [DistController::class, 'listRequests']);
     Route::get('/admin/distributors/sales-representatives', [DistController::class, 'listSalesRepresentatives']);
     Route::post('/admin/distributors/assign-engineer', [DistController::class, 'assignServiceEngineer']);
@@ -185,6 +209,11 @@ Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarr
     ->middleware('auth:sanctum');
 
 Route::middleware('auth:sanctum')->group(function () {
+
+
+
+    Route::get('/patient/implant-details/{ipg_serial_number}', [PatientImplantController::class, 'getImplantDetailsBySerial']);
+
 
     Route::get('patient/warranty-status', [PatientImplantController::class, 'getWarrantyStatus']);
     Route::post('/patient/replacement-request', [PatientImplantController::class, 'requestReplacement']);
@@ -239,3 +268,9 @@ Route::middleware(['auth:sanctum', 'role:admin'])
 Route::get('/admin/distributors/models', [IpgModelController::class, 'index']);
 
 Route::get('/get-all-ipg-models', [IpgModelController::class, 'index']);
+
+
+Route::get('ipg-serials/search', [IpgModelController::class, 'searchSerials']);
+
+Route::get('ipg-serials/search-available-serials', [IpgModelController::class, 'searchAvailableSerials']);
+Route::get('/lead-serials/search', [LeadController::class, 'searchLeadSerials']);

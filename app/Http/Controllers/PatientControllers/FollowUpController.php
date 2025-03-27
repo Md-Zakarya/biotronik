@@ -77,76 +77,76 @@ class FollowUpController extends Controller
 
 
     public function submitPaymentDetails(Request $request)
-{
-    $validated = $request->validate([
-        'gst_number' => 'required|string',
-        'pan_number' => 'required|string',
-        'payment_details' => 'required|array',
-        'amount' => 'required|numeric',
-        'payment_id' => 'nullable|exists:payments,id' // Optional payment_id for updating existing payment
-    ]);
-
-    try {
-        // Start transaction
-        DB::beginTransaction();
-        
-        if ($request->filled('payment_id')) {
-            // Update existing payment
-            $payment = Payment::where('id', $validated['payment_id'])
-                ->where('patient_id', $request->user()->id)
-                ->where('payment_status', 'pending')
-                ->first();
-                
-            if (!$payment) {
-                return response()->json([
-                    'message' => 'Invalid payment ID or payment is already completed'
-                ], 400);
-            }
-            
-            // Update the payment
-            $payment->update([
-                'gst_number' => $validated['gst_number'],
-                'pan_number' => $validated['pan_number'],
-                'payment_status' => 'completed',
-                'payment_date' => now(),
-                'payment_details' => array_merge(
-                    (array)$payment->payment_details, 
-                    $validated['payment_details'],
-                    ['completed_by' => 'patient', 'completed_at' => now()->toDateTimeString()]
-                )
-            ]);
-            
-            $message = 'Payment completed successfully';
-        } else {
-            // Create new payment
-            $payment = Payment::create([
-                'patient_id' => $request->user()->id,
-                'gst_number' => $validated['gst_number'],
-                'pan_number' => $validated['pan_number'],
-                'amount' => $validated['amount'],
-                'payment_status' => 'completed',
-                'payment_date' => now(),
-                'payment_type' => 'follow_up',
-                'payment_details' => $validated['payment_details']
-            ]);
-            
-            $message = 'Payment details saved successfully';
-        }
-        
-        DB::commit();
-        
-        return response()->json([
-            'message' => $message,
-            'payment_id' => $payment->id
+    {
+        $validated = $request->validate([
+            'gst_number' => 'required|string',
+            'pan_number' => 'required|string',
+            'payment_details' => 'required|array',
+            'amount' => 'required|numeric',
+            'payment_id' => 'nullable|exists:payments,id' // Optional payment_id for updating existing payment
         ]);
-    } catch (\Exception $e) {
-        DB::rollBack();
-        return response()->json([
-            'message' => 'Error processing payment',
-            'error' => $e->getMessage()
-        ], 500);
+
+        try {
+            // Start transaction
+            DB::beginTransaction();
+
+            if ($request->filled('payment_id')) {
+                // Update existing payment
+                $payment = Payment::where('id', $validated['payment_id'])
+                    ->where('patient_id', $request->user()->id)
+                    ->where('payment_status', 'pending')
+                    ->first();
+
+                if (!$payment) {
+                    return response()->json([
+                        'message' => 'Invalid payment ID or payment is already completed'
+                    ], 400);
+                }
+
+                // Update the payment
+                $payment->update([
+                    'gst_number' => $validated['gst_number'],
+                    'pan_number' => $validated['pan_number'],
+                    'payment_status' => 'completed',
+                    'payment_date' => now(),
+                    'payment_details' => array_merge(
+                        (array) $payment->payment_details,
+                        $validated['payment_details'],
+                        ['completed_by' => 'patient', 'completed_at' => now()->toDateTimeString()]
+                    )
+                ]);
+
+                $message = 'Payment completed successfully';
+            } else {
+                // Create new payment
+                $payment = Payment::create([
+                    'patient_id' => $request->user()->id,
+                    'gst_number' => $validated['gst_number'],
+                    'pan_number' => $validated['pan_number'],
+                    'amount' => $validated['amount'],
+                    'payment_status' => 'completed',
+                    'payment_date' => now(),
+                    'payment_type' => 'follow_up',
+                    'payment_details' => $validated['payment_details']
+                ]);
+
+                $message = 'Payment details saved successfully';
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'message' => $message,
+                'payment_id' => $payment->id
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'message' => 'Error processing payment',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
-}
 
     public function createFollowUpRequest(Request $request)
     {
@@ -226,59 +226,59 @@ class FollowUpController extends Controller
         }
     }
     public function getFollowUpStatus(Request $request)
-{
-    $user = $request->user();
+    {
+        $user = $request->user();
 
-    // Retrieve the latest follow-up request for the authenticated user
-    $followUp = FollowUpRequest::with('serviceEngineer') // Eager load the service engineer relationship
-        ->where('patient_id', $user->id)
-        ->latest()
-        ->first();
+        // Retrieve the latest follow-up request for the authenticated user
+        $followUp = FollowUpRequest::with('serviceEngineer') // Eager load the service engineer relationship
+            ->where('patient_id', $user->id)
+            ->latest()
+            ->first();
 
-    if (!$followUp) {
+        if (!$followUp) {
+            return response()->json([
+                'message' => 'Follow-up request not found'
+            ], 404);
+        }
+
+        // Retrieve the associated payment using the payment_id from the follow-up request
+        $payment = Payment::find($followUp->payment_id);
+
+        if (!$payment) {
+            return response()->json([
+                'message' => 'Payment information not found'
+            ], 404);
+        }
+
+        $responseData = [
+            'status' => $followUp->status,
+            'follow_up_id' => $followUp->follow_up_id,
+            'purchase' => $payment->payment_date,
+            'validity' => \Carbon\Carbon::parse($payment->payment_date)->addDays(15), // 15 days after purchase date
+            'appointment_datetime' => $followUp->appointment_datetime->format('Y-m-d H:i'),
+            'reason' => $followUp->reason,
+            'channel_partner' => $followUp->channel_partner,
+            'accompanying_person_name' => $followUp->accompanying_person_name,
+            'accompanying_person_phone' => $followUp->accompanying_person_phone,
+            'hospital_name' => $followUp->hospital_name,
+            'doctor_name' => $followUp->doctor_name,
+            'patient_name' => $user->name,
+            'patient_phone' => $user->phone_number,
+            'patient_email' => $user->email,
+        ];
+
+        // Add service engineer name if status is approved and a service engineer is assigned
+        if ($followUp->status === FollowUpRequest::STATUS_APPROVED && $followUp->serviceEngineer) {
+            $responseData['service_engineer_name'] = $followUp->serviceEngineer->name;
+        }
+
+
+
         return response()->json([
-            'message' => 'Follow-up request not found'
-        ], 404);
+            'message' => 'Follow-up status retrieved successfully',
+            'data' => $responseData
+        ], 200);
     }
-
-    // Retrieve the associated payment using the payment_id from the follow-up request
-    $payment = Payment::find($followUp->payment_id);
-
-    if (!$payment) {
-        return response()->json([
-            'message' => 'Payment information not found'
-        ], 404);
-    }
-
-    $responseData = [
-        'status' => $followUp->status,
-        'follow_up_id' => $followUp->follow_up_id,
-        'purchase' => $payment->payment_date,
-        'validity' => \Carbon\Carbon::parse($payment->payment_date)->addDays(15), // 15 days after purchase date
-        'appointment_datetime' => $followUp->appointment_datetime->format('Y-m-d H:i'),
-        'reason' => $followUp->reason,
-        'channel_partner' => $followUp->channel_partner,
-        'accompanying_person_name' => $followUp->accompanying_person_name,
-        'accompanying_person_phone' => $followUp->accompanying_person_phone,
-        'hospital_name' => $followUp->hospital_name,
-        'doctor_name' => $followUp->doctor_name,
-        'patient_name' => $user->name,
-        'patient_phone' => $user->phone_number,
-        'patient_email' => $user->email,
-    ];
-
-    // Add service engineer name if status is approved and a service engineer is assigned
-    if ($followUp->status === FollowUpRequest::STATUS_APPROVED && $followUp->serviceEngineer) {
-        $responseData['service_engineer_name'] = $followUp->serviceEngineer->name;
-    }
-
-    
-
-    return response()->json([
-        'message' => 'Follow-up status retrieved successfully',
-        'data' => $responseData
-    ], 200);
-}
 
     public function getPatientPaymentHistory(Request $request)
     {
@@ -331,21 +331,21 @@ class FollowUpController extends Controller
     public function checkPaymentStatus(Request $request)
     {
         $user = $request->user();
-            
+
         if (!$user) {
             return response()->json([
                 'paymentStatus' => 'unauthenticated',
                 'message' => 'User not authenticated'
             ], 401);
         }
-        
+
         $patientId = $user->id;
-        
+
         // Get all payments ordered by most recent first
         $payments = Payment::where('patient_id', $patientId)
             ->orderBy('created_at', 'desc')
             ->get();
-        
+
         if ($payments->isEmpty()) {
             return response()->json([
                 'paymentStatus' => 'payment_required',
@@ -354,12 +354,12 @@ class FollowUpController extends Controller
                 'paymentHistory' => []
             ], 200);
         }
-        
+
         // Get the most recent payment
         $latestPayment = $payments->first();
-        
+
         // Format the payment history
-        $paymentHistory = $payments->map(function($payment) {
+        $paymentHistory = $payments->map(function ($payment) {
             return [
                 'id' => $payment->id,
                 'amount' => $payment->amount,
@@ -371,18 +371,18 @@ class FollowUpController extends Controller
                 'pan_number' => $payment->pan_number
             ];
         });
-        
+
         // Determine payment scenario
         $paymentStatus = 'unknown';
         $message = '';
         $hasPaid = false;
-        
+
         if ($latestPayment->payment_status === 'completed') {
             $paymentStatus = 'paid';
             $message = 'Payment has been completed successfully.';
             $hasPaid = true;
             $paymentBy = isset($latestPayment->payment_details['paid_by']) ? $latestPayment->payment_details['paid_by'] : 'patient';
-            
+
             // Get service engineer name from users table if available
             $serviceEngineerName = null;
             if ($latestPayment->service_engineer_id) {
@@ -393,7 +393,7 @@ class FollowUpController extends Controller
             $paymentStatus = 'pending';
             $message = 'Payment is pending. Patient needs to complete payment.';
             $hasPaid = false;
-            
+
             // Get service engineer name from users table if available
             $serviceEngineerName = null;
             if ($latestPayment->service_engineer_id) {
@@ -401,7 +401,7 @@ class FollowUpController extends Controller
                 $serviceEngineerName = $serviceEngineer ? $serviceEngineer->name : null;
             }
         }
-        
+
         return response()->json([
             'paymentStatus' => $paymentStatus,
             'message' => $message,

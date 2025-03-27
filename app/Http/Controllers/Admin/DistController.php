@@ -6,12 +6,297 @@ use App\Http\Controllers\Controller;
 use App\Models\DeviceReplacement;
 use App\Models\User;
 use App\Models\FollowUpRequest;
+use App\Models\PendingImplant;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Carbon\Carbon;
 
 class DistController extends Controller
-{
+{   public function getDashboardCounts()
+    {
+        try {
+            // Get pending replacement requests count
+            $pendingReplacementsCount = DeviceReplacement::where('status', 'pending')->count();
+            
+            // Get pending implants count
+            $pendingImplantsCount = PendingImplant::where('status', 'pending')->count();
+            
+            // Get pending follow-up requests
+            $pendingFollowUpsCount = FollowUpRequest::where('status', 'pending')->count();
+            
+            // Total actionables
+            $totalActionables = $pendingReplacementsCount + $pendingImplantsCount + $pendingFollowUpsCount;
+            
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'total_actionables' => $totalActionables,
+                    'pending_replacements' => $pendingReplacementsCount,
+                    'pending_implants' => $pendingImplantsCount,
+                    'pending_follow_ups' => $pendingFollowUpsCount
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Error fetching dashboard counts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+
+    public function getPendingImplantDetails($id)
+    {
+        try {
+            $pendingImplant = PendingImplant::with('patient')
+                ->where('id', $id)
+                ->first();
+
+            if (!$pendingImplant) {
+                return response()->json([
+                    'message' => 'Pending implant not found'
+                ], 404);
+            }
+
+            $details = [
+                'id' => $pendingImplant->id,
+                'patient' => [
+                    'id' => $pendingImplant->patient->id,
+                    'name' => $pendingImplant->patient->name,
+                    'date_of_birth' => $pendingImplant->patient->date_of_birth,
+                    'gender' => $pendingImplant->patient->gender,
+                    'email' => $pendingImplant->patient->email,
+                    'phone_number' => $pendingImplant->patient->phone_number,
+                    'address' => $pendingImplant->patient->address,
+                    'state' => $pendingImplant->patient->state, 
+                    'city' => $pendingImplant->patient->city,
+                    'pincode' => $pendingImplant->patient->pin_code,
+                ],
+                'implant' => [
+                    'pre_feb_2022' => $pendingImplant->pre_feb_2022,
+                    'ipg_serial_number' => $pendingImplant->ipg_serial_number,
+                    'implantation_date' => $pendingImplant->implantation_date,
+                    'ipg_model' => $pendingImplant->ipg_model,
+                    'ipg_model_number' => $pendingImplant->ipg_model_number,
+                    'hospital_state' => $pendingImplant->hospital_state,
+                    'hospital_name' => $pendingImplant->hospital_name,
+                    'doctor_name' => $pendingImplant->doctor_name,
+                    'channel_partner' => $pendingImplant->channel_partner,
+                    'therapy_name' => $pendingImplant->therapy_name,
+                    'device_name' => $pendingImplant->device_name,
+                    'ra_rv_leads' => $pendingImplant->ra_rv_leads,
+                    'has_ra_rv_lead' => $pendingImplant->has_ra_rv_lead,
+                    'has_extra_lead' => $pendingImplant->has_extra_lead,
+                    'csp_lead_model' => $pendingImplant->csp_lead_model,
+                    'csp_catheter_model' => $pendingImplant->csp_catheter_model,
+                    'csp_lead_serial' => $pendingImplant->csp_lead_serial,
+                    'lead_brand' => $pendingImplant->lead_brand,
+                ],
+                'documents' => [
+                    'patient_id_card' => $pendingImplant->patient_id_card,
+                    'warranty_card' => $pendingImplant->warranty_card,
+                    'interrogation_report' => $pendingImplant->interrogation_report,
+                ],
+                'status' => $pendingImplant->status,
+            ];
+
+            return response()->json([
+                'message' => 'Pending implant details retrieved successfully',
+                'data' => $details
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving pending implant details',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function approvePendingImplant(Request $request, $id)
+    {
+        try {
+            \DB::beginTransaction();
+
+            $pendingImplant = PendingImplant::with('patient')
+                ->where('id', $id)
+                ->where('status', 'pending')
+                ->first();
+
+            if (!$pendingImplant) {
+                return response()->json([
+                    'message' => 'Pending implant not found or already processed'
+                ], 404);
+            }
+
+            // Create a new implant record from the pending data
+            $implantData = [
+                'patient_id' => $pendingImplant->patient_id,
+                'pre_feb_2022' => $pendingImplant->pre_feb_2022,
+                'ipg_serial_number' => $pendingImplant->ipg_serial_number,
+                'implantation_date' => $pendingImplant->implantation_date,
+                'ipg_model' => $pendingImplant->ipg_model,
+                'ipg_model_number' => $pendingImplant->ipg_model_number,
+                'hospital_state' => $pendingImplant->hospital_state,
+                'hospital_name' => $pendingImplant->hospital_name,
+                'doctor_name' => $pendingImplant->doctor_name,
+                'channel_partner' => $pendingImplant->channel_partner,
+                'therapy_name' => $pendingImplant->therapy_name,
+                'device_name' => $pendingImplant->device_name,
+                'ra_rv_leads' => $pendingImplant->ra_rv_leads,
+                'has_ra_rv_lead' => $pendingImplant->has_ra_rv_lead,
+                'has_extra_lead' => $pendingImplant->has_extra_lead,
+                'csp_lead_model' => $pendingImplant->csp_lead_model,
+                'csp_catheter_model' => $pendingImplant->csp_catheter_model,
+                'csp_lead_serial' => $pendingImplant->csp_lead_serial,
+                'patient_id_card' => $pendingImplant->patient_id_card,
+                'warranty_card' => $pendingImplant->warranty_card,
+                'interrogation_report' => $pendingImplant->interrogation_report,
+                'lead_brand' => $pendingImplant->lead_brand,
+                'secret_key' => \Illuminate\Support\Str::random(16),
+                'warranty_expired_at' => Carbon::parse($pendingImplant->implantation_date)->addYear(),
+                'active' => true
+            ];
+
+            // Deactivate any existing implants for this patient
+            \App\Models\Implant::where('patient_id', $pendingImplant->patient_id)
+                ->update(['active' => false]);
+
+            // Create the new implant
+            $implant = \App\Models\Implant::create($implantData);
+
+            // Update pending implant status
+            $pendingImplant->status = 'approved';
+            $pendingImplant->save();
+
+            \DB::commit();
+
+            return response()->json([
+                'message' => 'Implant approved and created successfully',
+                'data' => [
+                    'implant_id' => $implant->id,
+                    'ipg_serial_number' => $implant->ipg_serial_number,
+                    'secret_key' => $implant->secret_key
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            \DB::rollBack();
+            return response()->json([
+                'message' => 'Error approving pending implant',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function rejectPendingImplant(Request $request, $id)
+    {
+        try {
+            $validated = $request->validate([
+                'rejection_reason' => 'required|string|max:500'
+            ]);
+
+            $pendingImplant = PendingImplant::where('id', $id)
+                ->where('status', 'pending')
+                ->first();
+
+            if (!$pendingImplant) {
+                return response()->json([
+                    'message' => 'Pending implant not found or already processed'
+                ], 404);
+            }
+
+            // Update status and add rejection reason
+            $pendingImplant->status = 'rejected';
+            $pendingImplant->rejection_reason = $validated['rejection_reason'];
+            $pendingImplant->save();
+
+            return response()->json([
+                'message' => 'Pending implant rejected successfully',
+                'data' => [
+                    'id' => $pendingImplant->id,
+                    'status' => 'rejected',
+                    'rejection_reason' => $pendingImplant->rejection_reason
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error rejecting pending implant',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    public function listAllPendingItems(Request $request)
+    {
+        try {
+            // Get pending replacement requests
+            $replacementRequests = DeviceReplacement::with(['patient', 'implant', 'serviceEngineer'])
+                ->where('status', DeviceReplacement::STATUS_PENDING)
+                ->get()
+                ->map(function ($replacement) {
+                    return [
+                        'id' => $replacement->id,
+                        'type' => 'replacement',
+                        'patient_id' => $replacement->patient->id, // Added patient ID
+                        'patient_name' => $replacement->patient->name,
+                        'hospital_name' => $replacement->hospital_name,
+                        'hospital_address' => $replacement->state, // Added hospital state/address
+                        'ticket_type' => $replacement->replacement_reason ? 'Warranty Replacement' : 'Paid Replacement',
+                        'status' => 'Pending',
+                        'service_engineer' => $replacement->serviceEngineer ? $replacement->serviceEngineer->name : null,
+                    ];
+                });
+
+            // Get pending implants
+            $pendingImplants = PendingImplant::with('patient')
+                ->where('status', 'pending')
+                ->get()
+                ->map(function ($implant) {
+                    return [
+                        'id' => $implant->id,
+                        'type' => 'implant',
+                        'patient_id' => $implant->patient->id, // Added patient ID
+                        'patient_name' => $implant->patient->name,
+                        'hospital_name' => $implant->hospital_name,
+                        'hospital_address' => $implant->hospital_state, // Added hospital state/address
+                        'ticket_type' => 'Old Implant Registration',
+                        'status' => 'Pending',
+                        'service_engineer' => null,
+                    ];
+                });
+
+            // Combine both collections
+            $allPendingItems = $replacementRequests->concat($pendingImplants);
+
+            // Sort by created_at (newest first)
+            $sortedItems = $allPendingItems->sortByDesc('created_at')->values();
+
+            if ($sortedItems->isEmpty()) {
+                return response()->json([
+                    'message' => 'No pending items found',
+                    'data' => []
+                ], 200);
+            }
+
+            return response()->json([
+                'message' => 'Pending items retrieved successfully',
+                'data' => $sortedItems,
+                'counts' => [
+                    'total' => $sortedItems->count(),
+                    'replacements' => $replacementRequests->count(),
+                    'implants' => $pendingImplants->count()
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving pending items',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
     public function listAllPendingRequests(Request $request)
     {
         try {
