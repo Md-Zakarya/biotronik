@@ -11,6 +11,7 @@ return new class extends Migration
         Schema::create('payments', function (Blueprint $table) {
             $table->id();
             $table->foreignId('patient_id')->constrained();
+            $table->unsignedBigInteger('service_engineer_id');
             $table->string('gst_number');
             $table->string('pan_number');
             $table->decimal('amount', 10, 2);
@@ -19,6 +20,7 @@ return new class extends Migration
             $table->string('payment_type');
             $table->json('payment_details');
             $table->timestamps();
+            
         });
     }
 

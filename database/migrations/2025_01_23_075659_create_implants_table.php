@@ -31,6 +31,7 @@ class CreateImplantsTable extends Migration
         
             
             $table->boolean('has_ra_rv_lead')->nullable();
+            $table->json('ra_rv_leads')->nullable();
             $table->boolean('has_extra_lead')->nullable();
 
 
@@ -61,6 +62,7 @@ class CreateImplantsTable extends Migration
             //these fields may are may not be kept in future and hence are 
             //kep to continue the flow 
             $table->string('lead_brand')->nullable();
+            $table->string('implant_brand')->nullable();
             $table->string('rv_lead_model')->nullable();
             $table->string('rv_lead_serial')->nullable();
             $table->string('csp_lead_brand')->nullable();

@@ -131,7 +131,6 @@ class FollowUpController extends Controller
         $validated = $request->validate([
             'service_engineer_id' => 'required_if:status,approved|exists:users,id',
             'status' => 'required|in:approved,rejected',
-            'rejection_reason' => 'required_if:status,rejected'
         ]);
 
         try {
@@ -140,14 +139,13 @@ class FollowUpController extends Controller
             $followUp->update([
                 'service_engineer_id' => $validated['status'] === 'approved' ? $validated['service_engineer_id'] : null,
                 'status' => $validated['status'],
-                'rejection_reason' => $validated['rejection_reason'] ?? null
             ]);
 
             return response()->json([
                 'message' => 'Follow-up request ' . $validated['status'] . ' successfully',
                 'status' => $validated['status'],
                 'service_engineer_id' => $followUp->service_engineer_id,
-                'rejection_reason' => $followUp->rejection_reason
+             
             ]);
         } catch (\Exception $e) {
             return response()->json([
