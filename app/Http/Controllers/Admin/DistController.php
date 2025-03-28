@@ -16,7 +16,7 @@ class DistController extends Controller
     {
         try {
             // Get pending replacement requests count
-            $pendingReplacementsCount = DeviceReplacement::where('status', 'pending')->count();
+            $pendingReplacementsCount = DeviceReplacement::where('status', 'approved')->count();
             
             // Get pending implants count
             $pendingImplantsCount = PendingImplant::where('status', 'pending')->count();
