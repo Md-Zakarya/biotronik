@@ -121,6 +121,8 @@ class FollowUpController extends Controller
                 // Create new payment
                 $payment = Payment::create([
                     'patient_id' => $request->user()->id,
+
+                    'service_engineer_id' => null,
                     'gst_number' => $validated['gst_number'],
                     'pan_number' => $validated['pan_number'],
                     'amount' => $validated['amount'],
