@@ -570,11 +570,19 @@ class IpgModelController extends Controller
     }
 
 
+
     public function searchSerials(Request $request)
     {
         try {
             $query = IpgSerial::select('id', 'ipg_serial_number', 'model_number')
                 ->with('ipgModel:model_number,model_name,device_type');
+
+            // Add a condition to exclude serials that exist in implants
+            $query->whereNotExists(function ($subquery) {
+                $subquery->select(\DB::raw(1))
+                    ->from('implants')
+                    ->whereColumn('implants.ipg_serial_number', 'ipg_serials.ipg_serial_number');
+            });
 
             // Search term
             if ($request->has('search')) {
