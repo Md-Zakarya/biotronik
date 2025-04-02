@@ -11,39 +11,39 @@ use Illuminate\Http\Request;
 class FollowUpController extends Controller
 {
     public function getFollowUpRequests(Request $request)
-{
-    try {
-        $serviceEngineerId = $request->user()->id;
+    {
+        try {
+            $serviceEngineerId = $request->user()->id;
 
-        $followUpRequests = FollowUpRequest::with(['patient'])
-            ->whereIn('status', [FollowUpRequest::STATUS_APPROVED, FollowUpRequest::STATUS_COMPLETED])
-            ->where('service_engineer_id', $serviceEngineerId)
-            ->get()
-            ->map(function ($request) {
-                return [
-                    'Follow_up_request_id' => $request->id,
-                    'patient_id' => $request->patient->id,
-                    'patient_name' => $request->patient->name,
-                    'state' => $request->state,
-                    'ticket_type' => 'Follow-up Service',
-                    'appointment_datetime' => $request->appointment_datetime,
-                    // Change status display to 'pending' when status is 'approved'
-                    'status' => $request->status === FollowUpRequest::STATUS_APPROVED ? 'pending' : $request->status,
-                ];
-            });
+            $followUpRequests = FollowUpRequest::with(['patient'])
+                ->whereIn('status', [FollowUpRequest::STATUS_APPROVED, FollowUpRequest::STATUS_COMPLETED])
+                ->where('service_engineer_id', $serviceEngineerId)
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'Follow_up_request_id' => $request->id,
+                        'patient_id' => $request->patient->id,
+                        'patient_name' => $request->patient->name,
+                        'state' => $request->state,
+                        'ticket_type' => 'Follow-up Service',
+                        'appointment_datetime' => $request->appointment_datetime,
+                        // Change status display to 'pending' when status is 'approved'
+                        'status' => $request->status === FollowUpRequest::STATUS_APPROVED ? 'pending' : $request->status,
+                    ];
+                });
 
-        return response()->json([
-            'message' => 'Follow-up requests retrieved successfully',
-            'data' => $followUpRequests
-        ], 200);
+            return response()->json([
+                'message' => 'Follow-up requests retrieved successfully',
+                'data' => $followUpRequests
+            ], 200);
 
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => 'Error retrieving follow-up requests',
-            'error' => $e->getMessage()
-        ], 500);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving follow-up requests',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
-}
 
     public function getFollowUpStatus(Request $request, $id)
     {
@@ -533,7 +533,7 @@ class FollowUpController extends Controller
                         'ticket_type' => 'Follow-up Service',
                         'status' => 'pending',
                         'appointment_datetime' => $request->appointment_datetime,
-                        'created_at' => $request->created_at->toDateTimeString()
+                        // 'created_at' => $request->created_at->toDateTimeString()
                     ];
                 });
 
@@ -541,8 +541,9 @@ class FollowUpController extends Controller
             // Added where clause to only include incomplete services
             $replacementRequests = \App\Models\DeviceReplacement::with(['patient'])
                 ->where('service_engineer_id', $serviceEngineerId)
-                ->whereIn('status', ['approved', 'pending'])
+                ->whereIn('status', ['approved', 'pending', 'registered'])
                 ->where('service_completed', false)  // Only get replacements that haven't been completed
+                ->whereNotNull('new_ipg_serial_number') // Exclude if new_ipg_serial_number is null
                 ->get()
                 ->map(function ($request) {
                     return [
@@ -552,6 +553,7 @@ class FollowUpController extends Controller
                         'hospital_name' => $request->hospital_name ?? 'Not specified',
                         'ticket_type' => $request->is_warranty_claim ? 'Warranty Replacement' : 'Paid Replacement',
                         'status' => 'pending',
+                        'appointment_datetime' => $request->planned_replacement_date,
                         'created_at' => $request->created_at->toDateTimeString()
                     ];
                 });
@@ -575,6 +577,52 @@ class FollowUpController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Error retrieving actionable requests',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+
+    /**
+     * Get only the count of actionable items for badge/notification display
+     * This is a lightweight endpoint that only returns counts
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getActionableCounts(Request $request)
+    {
+        try {
+            $serviceEngineerId = $request->user()->id;
+
+            // Count follow-up requests (don't load relations to improve performance)
+            $followUpCount = FollowUpRequest::where('service_engineer_id', $serviceEngineerId)
+                ->whereIn('status', [FollowUpRequest::STATUS_APPROVED, FollowUpRequest::STATUS_PENDING])
+                ->count();
+
+            // Count device replacements
+            $replacementCount = \App\Models\DeviceReplacement::where('service_engineer_id', $serviceEngineerId)
+                ->whereIn('status', ['approved', 'pending', 'registered'])
+                ->where('service_completed', false)
+                ->whereNotNull('new_ipg_serial_number')
+                ->count();
+
+            // Total count
+            $totalActionables = $followUpCount + $replacementCount;
+
+            return response()->json([
+                'message' => 'Actionable counts retrieved successfully',
+                'data' => [
+                    'total_actionables' => $totalActionables,
+                    'follow_up_requests' => $followUpCount,
+                    'replacement_requests' => $replacementCount
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving actionable counts',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -625,6 +673,84 @@ class FollowUpController extends Controller
 
             return response()->json([
                 'message' => 'Error retrieving assigned IPG serial numbers',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
+    /**
+     * Get detailed information about a device replacement request
+     * 
+     * @param Request $request
+     * @param int $id The device replacement ID
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getReplacementDetails(Request $request, $id)
+    {
+        try {
+            $serviceEngineerId = $request->user()->id;
+
+            // Get the replacement request with related data
+            $replacement = \App\Models\DeviceReplacement::with(['patient'])
+                ->where('id', $id)
+                ->where('service_engineer_id', $serviceEngineerId)
+                ->first();
+
+            if (!$replacement) {
+                return response()->json([
+                    'message' => 'Device replacement request not found or not assigned to you'
+                ], 404);
+            }
+
+            // Get the latest active implant for this patient
+            $latestImplant = \App\Models\Implant::where('patient_id', $replacement->patient->id)
+                ->where('active', true)
+                ->latest('created_at')
+                ->first();
+
+            if (!$latestImplant) {
+                // Fallback to the implant referenced in the replacement if no active implant found
+                $latestImplant = \App\Models\Implant::find($replacement->implant_id);
+            }
+
+            // Format simplified response data
+            $responseData = [
+                // Location and scheduling details
+                'state' => $replacement->state,
+                'hospital_name' => $replacement->hospital_name,
+                'doctor_name' => $replacement->doctor_name,
+                'channel_partner' => $replacement->channel_partner,
+                'planned_replacement_date' => $replacement->planned_replacement_date,
+
+                // Patient information
+                'patient_name' => $replacement->patient->name,
+                'patient_phone' => $replacement->patient->phone_number,
+            ];
+
+            // Add device information if we have an implant
+            if ($latestImplant) {
+                $responseData['device_details'] = [
+                    'therapy_name' => $latestImplant->therapy_name ?? 'Not specified',
+                    'device_type' => $latestImplant->device_name ?? 'Not specified',
+                    'ipg_serial_number' => $latestImplant->ipg_serial_number,
+                    'ipg_model_name' => $latestImplant->ipg_model,
+                    'ipg_model_number' => $latestImplant->ipg_model_number
+                ];
+            } else {
+                $responseData['device_details'] = [
+                    'error' => 'No implant found for this patient'
+                ];
+            }
+
+            return response()->json([
+                'message' => 'Device replacement details retrieved successfully',
+                'data' => $responseData
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving device replacement details',
                 'error' => $e->getMessage()
             ], 500);
         }

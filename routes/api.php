@@ -94,7 +94,10 @@ Route::middleware(['auth:sanctum', 'role:sales-representative'])->group(function
     Route::get('/service-engineer/payments/{paymentId}', [SEFollowUpController::class, 'getPaymentStatus']);
 
     Route::get('/service-engineer/actionables', [SEFollowUpController::class, 'getAllActionables']);
+    Route::get('/service-engineer/actionable-counts', [SEFollowUpController::class, 'getActionableCounts']);
 
+    Route::get('/service-engineer/actionables', [SEFollowUpController::class, 'getAllActionables']);
+    Route::get('/service-engineer/replacement-request/{id}', [SEFollowUpController::class, 'getReplacementDetails']);
     //implant replacement new assigned by the distrubuter
     Route::get('/service-engineer/assigned-ipg-serials', [SEFollowUpController::class, 'getAssignedIpgSerials']);
 });

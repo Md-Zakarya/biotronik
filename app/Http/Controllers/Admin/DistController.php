@@ -12,27 +12,27 @@ use Illuminate\Validation\Rule;
 use Carbon\Carbon;
 
 class DistController extends Controller
-{   public function getDashboardCounts()
+{
+    public function getDashboardCounts()
     {
         try {
             // Get pending replacement requests count
-            $pendingReplacementsCount = DeviceReplacement::where('status', 'approved')->count();
-            
-            // Get pending implants count
-            $pendingImplantsCount = PendingImplant::where('status', 'pending')->count();
-            
+            $pendingReplacementsCount = DeviceReplacement::where('status', 'approved')
+                ->where('service_completed', false)
+                ->whereNull('new_ipg_serial_number')
+                ->count();
+
             // Get pending follow-up requests
             $pendingFollowUpsCount = FollowUpRequest::where('status', 'pending')->count();
-            
+
             // Total actionables
-            $totalActionables = $pendingReplacementsCount + $pendingImplantsCount + $pendingFollowUpsCount;
-            
+            $totalActionables = $pendingReplacementsCount + $pendingFollowUpsCount;
+
             return response()->json([
                 'status' => 'success',
                 'data' => [
                     'total_actionables' => $totalActionables,
                     'pending_replacements' => $pendingReplacementsCount,
-                    'pending_implants' => $pendingImplantsCount,
                     'pending_follow_ups' => $pendingFollowUpsCount
                 ]
             ], 200);
@@ -70,7 +70,7 @@ class DistController extends Controller
                     'email' => $pendingImplant->patient->email,
                     'phone_number' => $pendingImplant->patient->phone_number,
                     'address' => $pendingImplant->patient->address,
-                    'state' => $pendingImplant->patient->state, 
+                    'state' => $pendingImplant->patient->state,
                     'city' => $pendingImplant->patient->city,
                     'pincode' => $pendingImplant->patient->pin_code,
                 ],
@@ -95,9 +95,9 @@ class DistController extends Controller
                     'lead_brand' => $pendingImplant->lead_brand,
                 ],
                 'documents' => [
-                    'patient_id_card' => $pendingImplant->patient_id_card,
-                    'warranty_card' => $pendingImplant->warranty_card,
-                    'interrogation_report' => $pendingImplant->interrogation_report,
+                    'patient_id_card' => $pendingImplant->patient_id_card ? \Storage::disk('s3')->url($pendingImplant->patient_id_card) : null,
+                    'warranty_card' => $pendingImplant->warranty_card ? \Storage::disk('s3')->url($pendingImplant->warranty_card) : null,
+                    'interrogation_report' => $pendingImplant->interrogation_report ? \Storage::disk('s3')->url($pendingImplant->interrogation_report) : null,
                 ],
                 'status' => $pendingImplant->status,
             ];
@@ -244,7 +244,8 @@ class DistController extends Controller
                         'patient_name' => $replacement->patient->name,
                         'hospital_name' => $replacement->hospital_name,
                         'hospital_address' => $replacement->state, // Added hospital state/address
-                        'ticket_type' => $replacement->replacement_reason ? 'Warranty Replacement' : 'Paid Replacement',
+                        'ticket_type' => $replacement->is_warranty_claim ? 'Warranty Replacement' : 'Paid Replacement',
+                        // 'ticket_type' => $replacement->replacement_reason ? 'Warranty Replacement' : 'Paid Replacement',
                         'status' => 'Pending',
                         'service_engineer' => $replacement->serviceEngineer ? $replacement->serviceEngineer->name : null,
                     ];
@@ -512,6 +513,8 @@ class DistController extends Controller
             try {
                 $oldImplant = $replacement->implant;
                 $replacement->new_ipg_serial_number = $validated['new_ipg_serial_number'];
+                $replacement->status = 'registered';
+
                 $replacement->save(); // Make sure to save the changes
                 $oldSerial = $oldImplant->ipg_serial_number;
                 $patientId = $oldImplant->patient_id;
@@ -578,7 +581,7 @@ class DistController extends Controller
                         'request_type' => 'replacement',
                         'patient_name' => $request->patient->name,
                         'hospital_name' => $request->hospital_name,
-                        'ticket_type' => $request->replacement_reason ? 'Warranty Replacement' : 'Paid Replacement',
+                        'ticket_type' => $request->is_warranty_claim ? 'Warranty Replacement' : 'Paid Replacement',
                         'status' => 'Pending',
                         'service_engineer' => $request->serviceEngineer ? $request->serviceEngineer->name : null,
                         'created_at' => $request->created_at->toDateTimeString() // Ensure consistent date format

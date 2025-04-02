@@ -27,6 +27,7 @@ class DeviceReplacement extends Model
         'rejection_reason',
         'service_engineer_id',
         'service_completed',
+         'is_warranty_claim',
         
     ];
 
