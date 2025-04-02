@@ -10,8 +10,10 @@ use Carbon\Carbon;
 use App\Models\DeviceReplacement;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rules\Exists;
 use Illuminate\Validation\ValidationException;
 use App\Models\PendingImplant;
+use Illuminate\Support\Facades\Storage;
 
 
 class PatientImplantController extends Controller
@@ -462,7 +464,7 @@ class PatientImplantController extends Controller
      * Register or link an implant to the patient
      */
 
-      /**
+    /**
      * Register or link an implant to the patient
      */
     public function registerImplant(Request $request)
@@ -580,22 +582,51 @@ class PatientImplantController extends Controller
                     'status' => 'pending'
                 ];
 
-                // Store file uploads if provided
-                // if ($request->hasFile('patient_id_card')) {
-                //     $pendingImplantData['patient_id_card'] = $request->file('patient_id_card')
-                //         ->store('patient_documents', 'public');
-                // }
-                
-                // if ($request->hasFile('warranty_card')) {
-                //     $pendingImplantData['warranty_card'] = $request->file('warranty_card')
-                //         ->store('patient_documents', 'public');
-                // }
-                
-                // if ($request->hasFile('interrogation_report')) {
-                //     $pendingImplantData['interrogation_report'] = $request->file('interrogation_report')
-                //         ->store('patient_documents', 'public');
-                // }
+                Log::info("[$requestId] Files in request", [
+                    'has_patient_id_card' => $request->hasFile('patient_id_card'),
+                    'has_warranty_card' => $request->hasFile('warranty_card'),
+                    'has_interrogation_report' => $request->hasFile('interrogation_report'),
+                    'all_files' => $request->allFiles()
+                ]);
+                // Store file uploads if provided using S3
+                if ($request->hasFile('patient_id_card')) {
+                    $file = $request->file('patient_id_card');
+                    $s3Filename = 'backend-images/biotronik/patient_id_cards/' . time() . '_' . $user->id . '_' . $file->getClientOriginalName();
+                    $dbFilename = 'biotronik/patient_id_cards/' . time() . '_' . $user->id . '_' . $file->getClientOriginalName();
+                    $path = Storage::disk('s3')->put($s3Filename, file_get_contents($file));
+                    $pendingImplantData['patient_id_card'] = $dbFilename;
 
+                    Log::info("[$requestId] Patient ID card uploaded to S3", [
+                        'path' => $s3Filename,
+                        'result' => $path
+                    ]);
+                }
+
+                if ($request->hasFile('warranty_card')) {
+                    $file = $request->file('warranty_card');
+                    $s3Filename = 'backend-images/biotronik/warranty_cards/' . time() . '_' . $user->id . '_' . $file->getClientOriginalName();
+                    $dbFilename = 'biotronik/warranty_cards/' . time() . '_' . $user->id . '_' . $file->getClientOriginalName();
+                    $path = Storage::disk('s3')->put($s3Filename, file_get_contents($file));
+                    $pendingImplantData['warranty_card'] = $dbFilename;
+
+                    Log::info("[$requestId] Warranty card uploaded to S3", [
+                        'path' => $s3Filename,
+                        'result' => $path
+                    ]);
+                }
+
+                if ($request->hasFile('interrogation_report')) {
+                    $file = $request->file('interrogation_report');
+                    $s3Filename = 'backend-images/biotronik/interrogation_reports/' . time() . '_' . $user->id . '_' . $file->getClientOriginalName();
+                    $dbFilename = 'biotronik/interrogation_reports/' . time() . '_' . $user->id . '_' . $file->getClientOriginalName();
+                    $path = Storage::disk('s3')->put($s3Filename, file_get_contents($file));
+                    $pendingImplantData['interrogation_report'] = $dbFilename;
+
+                    Log::info("[$requestId] Interrogation report uploaded to S3", [
+                        'path' => $s3Filename,
+                        'result' => $path
+                    ]);
+                }
                 // Handle ra_rv_leads as JSON
                 if ($request->has('ra_rv_leads') && is_array($validated['ra_rv_leads']) && count($validated['ra_rv_leads']) > 0) {
                     Log::info("[$requestId] Using ra_rv_leads array from request", [
@@ -727,7 +758,7 @@ class PatientImplantController extends Controller
 
                 $implant = $existingImplant;
                 $message = 'Existing implant linked to patient successfully';
-                
+
                 return response()->json([
                     'message' => $message,
                     'implant' => $implant
@@ -1088,13 +1119,33 @@ class PatientImplantController extends Controller
                 'profile_complete' => $basicProfileComplete && $relativeInfoComplete,
             ];
 
+
+            $IsOldImplant = false;
+            $PendingOldImplant = PendingImplant::where('patient_id', $user->id)
+                ->where(function ($query) {
+                    $query->where('status', 'pending')
+                        ->orWhere('status', 'approved');
+                })
+                ->latest()
+                ->first();
+
+            $IsOldImplant = ($PendingOldImplant !== null);
+
+            $oldImplant = $PendingOldImplant ? [
+                'is_old_implant' => $IsOldImplant,
+                'status' => $PendingOldImplant->status,
+                'ipg_serial_number' => $PendingOldImplant->ipg_serial_number
+            ] : null;
+
             // Check if user has any implants
             if (!$user->implant()->exists()) {
                 return response()->json([
                     'message' => 'No implants found for this patient',
                     'has_implant' => false,
                     'profile_data' => $profileData,
-                    'profile_status' => $profileStatus
+                    'profile_status' => $profileStatus,
+                    'is_old_implant' => $IsOldImplant,
+                    'old_implant_details' => $oldImplant,
                 ], 200);
             }
 
@@ -1109,8 +1160,14 @@ class PatientImplantController extends Controller
                     'implantation_date',
                     'device_name',
                     'active',
-                    'implantation_date'
+                    'implantation_date',
+                    // 'pre_feb_2022'
+
                 ]);
+
+
+
+
 
             // Find the active implant
             $activeImplant = $implants->firstWhere('active', true);
@@ -1122,7 +1179,10 @@ class PatientImplantController extends Controller
                 'all_implants' => $implants,
                 'implant_count' => $implants->count(),
                 'profile_data' => $profileData,
-                'profile_status' => $profileStatus
+                'profile_status' => $profileStatus,
+                'is_old_implant' => $IsOldImplant,
+                'old_implant_details' => $oldImplant
+
             ], 200);
 
         } catch (\Exception $e) {
@@ -1534,7 +1594,7 @@ class PatientImplantController extends Controller
             'ra_rv_lead_model' => 'nullable|string',
             'ra_rv_lead_serial' => 'nullable|string',
             'has_ra_rv_lead' => 'nullable|boolean',
-            'state' => 'required|string', 
+            'state' => 'required|string',
             'csp_catheter_model' => 'nullable|string',
             'has_extra_lead' => 'nullable|boolean',
             'csp_lead_model' => 'nullable|string',
@@ -1542,7 +1602,7 @@ class PatientImplantController extends Controller
             'ra_rv_leads' => 'nullable|array',
             'ra_rv_leads.*.model' => 'required_with:ra_rv_leads|string',
             'ra_rv_leads.*.serial' => 'required_with:ra_rv_leads|string',
-            
+
         ]);
 
         try {
@@ -1669,6 +1729,7 @@ class PatientImplantController extends Controller
     }
 
 
+
     public function requestReplacement(Request $request)
     {
         try {
@@ -1700,25 +1761,15 @@ class PatientImplantController extends Controller
             // Check warranty
             $isWarranty = !now()->greaterThan($implant->warranty_expired_at);
 
-            // Base validation
+            // Base validation - now includes replacement_reason and planned_replacement_date for all cases
             $validationRules = [
                 'state' => 'required|string',
                 'hospital_name' => 'required|string',
                 'doctor_name' => 'required|string',
                 'channel_partner' => 'required|string',
+                'replacement_reason' => 'required|string|nullable',
+                'planned_replacement_date' => 'nullable|required|date_format:Y-m-d H:i|after:now',
             ];
-
-            // Warranty validation
-            if ($isWarranty) {
-                $validationRules += [
-                    'replacement_reason' => 'required|string',
-                    // 'planned_replacement_date' => 'required|date|after:today',
-                    // 'planned_replacement_date' => 'required|date_format:Y-m-d H:i:s|after:now',
-                    'planned_replacement_date' => 'required|date_format:Y-m-d H:i|after:now',
-                    // 'interrogation_report' => 'required|file|max:2048',
-                    // 'prescription' => 'required|file|max:2048'
-                ];
-            }
 
             $validated = $request->validate($validationRules);
 
@@ -1728,21 +1779,17 @@ class PatientImplantController extends Controller
                 'state' => $validated['state'],
                 'hospital_name' => $validated['hospital_name'],
                 'doctor_name' => $validated['doctor_name'],
-                'channel_partner' => $validated['channel_partner']
+                'channel_partner' => $validated['channel_partner'],
+                'replacement_reason' => $validated['replacement_reason'],
+                'planned_replacement_date' => $validated['planned_replacement_date'],
+                'is_warranty_claim' => $isWarranty, // Set warranty flag based on actual warranty status
             ];
 
+            // Set status based on warranty
             if ($isWarranty) {
-                $replacementData += [
-                    'replacement_reason' => $validated['replacement_reason'],
-                    'planned_replacement_date' => $validated['planned_replacement_date'],
-                    // 'interrogation_report_path' => $request->file('interrogation_report')->store('reports'),
-                    // 'prescription_path' => $request->file('prescription')->store('prescriptions'),
-                    'status' => DeviceReplacement::STATUS_PENDING
-                ];
+                $replacementData['status'] = DeviceReplacement::STATUS_PENDING;
             } else {
-                $replacementData += [
-                    'status' => DeviceReplacement::STATUS_APPROVED
-                ];
+                $replacementData['status'] = DeviceReplacement::STATUS_APPROVED;
             }
 
             // If there was a rejected request, update it instead of creating new
@@ -1799,8 +1846,11 @@ class PatientImplantController extends Controller
         }
     }
 
+
     public function submitReplacement(Request $request)
     {
+        \Log::info('submitReplacement method started', ['request' => $request->all()]);
+
         $validated = $request->validate([
             'new_ipg_serial_number' => 'required|string|exists:implants,ipg_serial_number',
             'state' => 'required|string',
@@ -1810,14 +1860,25 @@ class PatientImplantController extends Controller
             'device_name' => 'required|string',
             'implantation_date' => 'required|date',
             'ipg_model' => 'required|string',
-            // 'ipg_model_number' => 'required|string'
         ]);
+
+        \Log::info('Request validated successfully', ['validated_data' => $validated]);
 
         try {
             \DB::beginTransaction();
+            \Log::info('Transaction started');
 
             // Find the existing implant record
             $implant = Implant::where('ipg_serial_number', $validated['new_ipg_serial_number'])->first();
+
+            if (!$implant) {
+                \Log::warning('Implant not found', ['ipg_serial_number' => $validated['new_ipg_serial_number']]);
+                return response()->json([
+                    'message' => 'Implant not found',
+                ], 404);
+            }
+
+            \Log::info('Implant found', ['implant_id' => $implant->id]);
 
             // Update the implant record with new information
             $implant->update([
@@ -1828,25 +1889,26 @@ class PatientImplantController extends Controller
                 'device_name' => $validated['device_name'],
                 'implantation_date' => $validated['implantation_date'],
                 'ipg_model' => $validated['ipg_model'],
-                // 'ipg_model_number' => $validated['ipg_model_number'],
                 'warranty_expired_at' => Carbon::parse($validated['implantation_date'])->addMonths(3),
                 'user_id' => $request->user()->id
             ]);
 
+            \Log::info('Implant updated successfully', ['implant_id' => $implant->id]);
+
             // Find and update the related device replacement record
             $replacementRequest = DeviceReplacement::where('new_ipg_serial_number', $validated['new_ipg_serial_number'])
-                ->where('status', 'approved')
+                ->where('status', 'registered')
                 ->where('service_completed', false)
                 ->latest()
                 ->first();
 
-
             if ($replacementRequest) {
+                \Log::info('Replacement request found', ['replacement_id' => $replacementRequest->id]);
+
                 // Log before updating
                 \Log::info('Device replacement service completion initiated', [
                     'replacement_id' => $replacementRequest->id,
                     'patient_id' => $replacementRequest->patient_id,
-
                     'new_ipg_serial' => $replacementRequest->new_ipg_serial_number,
                     'engineer_id' => $request->user()->id
                 ]);
@@ -1855,14 +1917,19 @@ class PatientImplantController extends Controller
                     'service_completed' => true
                 ]);
 
+                \Log::info('Replacement request updated successfully', ['replacement_id' => $replacementRequest->id]);
+
                 // Log after successful update
                 \Log::info('Device replacement service completed successfully', [
                     'replacement_id' => $replacementRequest->id,
-
                     'engineer_id' => $request->user()->id
                 ]);
+            } else {
+                \Log::info('No replacement request found for this implant', ['ipg_serial_number' => $validated['new_ipg_serial_number']]);
             }
+
             \DB::commit();
+            \Log::info('Transaction committed');
 
             return response()->json([
                 'message' => 'Implant information updated successfully',
@@ -1872,6 +1939,7 @@ class PatientImplantController extends Controller
 
         } catch (\Exception $e) {
             \DB::rollBack();
+            \Log::error('Transaction rolled back due to error', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
 
             return response()->json([
                 'message' => 'Error updating implant information',
@@ -2190,18 +2258,20 @@ class PatientImplantController extends Controller
     public function getImplantDetailsBySerial($ipgSerialNumber)
     {
         try {
-            $implant = Implant::with(['patient' => function($query) {
-                $query->select('id', 'name', 'email', 'phone_number', 'date_of_birth', 'gender');
-            }])
-            ->where('ipg_serial_number', $ipgSerialNumber)
-            ->first();
-    
+            $implant = Implant::with([
+                'patient' => function ($query) {
+                    $query->select('id', 'name', 'email', 'phone_number', 'date_of_birth', 'gender');
+                }
+            ])
+                ->where('ipg_serial_number', $ipgSerialNumber)
+                ->first();
+
             if (!$implant) {
                 return response()->json([
                     'message' => 'No implant found with the provided IPG serial number'
                 ], 404);
             }
-    
+
             return response()->json([
                 'message' => 'Implant details retrieved successfully',
                 'data' => [

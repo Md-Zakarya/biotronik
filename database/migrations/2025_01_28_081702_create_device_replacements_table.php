@@ -32,9 +32,9 @@ class CreateDeviceReplacementsTable extends Migration
             $table->decimal('service_charge', 10, 2)->nullable();
             
             // Status
-            $table->enum('status', ['pending', 'approved', 'rejected'])->default('pending');
+            $table->enum('status', ['pending', 'approved', 'rejected','registered'])->default('pending');
             $table->boolean('service_completed')->default(false);
-
+            $table->boolean('is_warranty_claim')->default(false);
             $table->text('rejection_reason')->nullable();
             $table->timestamps();
         });

@@ -576,30 +576,34 @@ class IpgModelController extends Controller
         try {
             $query = IpgSerial::select('id', 'ipg_serial_number', 'model_number')
                 ->with('ipgModel:model_number,model_name,device_type');
-
+    
             // Add a condition to exclude serials that exist in implants
             $query->whereNotExists(function ($subquery) {
                 $subquery->select(\DB::raw(1))
                     ->from('implants')
                     ->whereColumn('implants.ipg_serial_number', 'ipg_serials.ipg_serial_number');
             });
-
+    
             // Search term
             if ($request->has('search')) {
                 $searchTerm = $request->search;
                 $query->where('ipg_serial_number', 'like', "%{$searchTerm}%");
             }
-
+    
             // Limit results (default 10)
             $limit = $request->input('limit', 10);
             $serials = $query->limit($limit)->get();
-
+    
             // Format for dropdown
             $formattedSerials = $serials->map(function ($serial) {
                 $modelInfo = $serial->ipgModel ?
                     " ({$serial->ipgModel->model_name} - {$serial->ipgModel->device_type})" :
                     "";
-
+    
+                // Determine therapy name based on device type
+                $deviceType = $serial->ipgModel ? $serial->ipgModel->device_type : '';
+                $therapyName = (stripos($deviceType, 'tachy') !== false) ? 'Tachy' : 'Brady';
+    
                 return [
                     'id' => $serial->id,
                     'value' => $serial->ipg_serial_number,
@@ -607,10 +611,11 @@ class IpgModelController extends Controller
                     // Additional model information
                     'model_number' => $serial->model_number,
                     'model_name' => $serial->ipgModel ? $serial->ipgModel->model_name : null,
-                    'device_type' => $serial->ipgModel ? $serial->ipgModel->device_type : null
+                    'device_type' => $serial->ipgModel ? $serial->ipgModel->device_type : null,
+                    'therapy_name' => $therapyName // Added therapy name based on device type
                 ];
             });
-
+    
             return response()->json([
                 'success' => true,
                 'data' => $formattedSerials
