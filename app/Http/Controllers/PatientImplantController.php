@@ -384,11 +384,11 @@ class PatientImplantController extends Controller
             'request_method' => $request->method(),
             'request_ip' => $request->ip()
         ]);
-
+    
         try {
             $user = $request->user();
             Log::info("[$requestId] User retrieved", ['user_id' => $user->id, 'email' => $user->email]);
-
+    
             Log::info("[$requestId] Starting validation for patient info");
             $validated = $request->validate([
                 // Basic patient fields (all optional)
@@ -399,7 +399,8 @@ class PatientImplantController extends Controller
                 'state' => 'sometimes|string',
                 'city' => 'sometimes|string',
                 'pin_code' => 'sometimes|string',
-
+                'patient_photo' => 'sometimes|image|mimes:jpeg,png,jpg,gif|max:2048',
+    
                 // Relative information (all optional)
                 'relative_name' => 'sometimes|string|max:255',
                 'relative_relation' => 'sometimes|string',
@@ -411,35 +412,48 @@ class PatientImplantController extends Controller
                 'relative_email' => 'sometimes|nullable|email',
                 'relative_phone' => 'sometimes|string',
             ]);
-
+    
             Log::info("[$requestId] Patient information validation successful");
-
+    
             // Prepare update data with only the fields that were provided
             $updateData = [];
-
+    
             // Handle patient photo if provided
             if ($request->hasFile('patient_photo')) {
-                $updateData['patient_photo'] = $request->file('patient_photo');
+                $file = $request->file('patient_photo');
+                $s3Filename = 'backend-images/biotronik/patient_photos/' . time() . '_' . $user->id . '_' . $file->getClientOriginalName();
+                $dbFilename = 'biotronik/patient_photos/' . time() . '_' . $user->id . '_' . $file->getClientOriginalName();
+                
+                // Upload to S3 storage
+                $path = Storage::disk('s3')->put($s3Filename, file_get_contents($file));
+                $updateData['patient_photo'] = $dbFilename;
+                
+                Log::info("[$requestId] Patient photo uploaded to S3", [
+                    'path' => $s3Filename,
+                    'result' => $path
+                ]);
             }
-
+    
             // Add all validated fields to the update data
             foreach ($validated as $key => $value) {
-                $updateData[$key] = $value;
+                if ($key !== 'patient_photo') { // Skip patient_photo as we've handled it separately
+                    $updateData[$key] = $value;
+                }
             }
-
+    
             // Update patient information with only the provided fields
             $user->update($updateData);
-
+    
             Log::info("[$requestId] Patient information updated successfully", [
                 'user_id' => $user->id,
                 'updated_fields' => array_keys($updateData)
             ]);
-
+    
             return response()->json([
                 'message' => 'Patient information updated successfully',
                 'patient' => $user
             ], 200);
-
+    
         } catch (ValidationException $e) {
             Log::error("[$requestId] Validation error", [
                 'errors' => $e->errors(),
@@ -452,7 +466,7 @@ class PatientImplantController extends Controller
                 'file' => $e->getFile(),
                 'line' => $e->getLine()
             ]);
-
+    
             return response()->json([
                 'message' => 'Error updating patient information',
                 'error' => $e->getMessage()

@@ -64,6 +64,9 @@ class DistController extends Controller
                 'id' => $pendingImplant->id,
                 'patient' => [
                     'id' => $pendingImplant->patient->id,
+                    'patient_photo' => $pendingImplant->patient->patient_photo
+                        ? \Storage::disk('s3')->url($pendingImplant->patient->patient_photo)
+                        : null,
                     'name' => $pendingImplant->patient->name,
                     'date_of_birth' => $pendingImplant->patient->date_of_birth,
                     'gender' => $pendingImplant->patient->gender,
