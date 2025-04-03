@@ -31,12 +31,12 @@ class Patient extends Model
 
 
         //new Auth credentials Added
-        'Auth_name', 
-        'email', 
+        'Auth_name',
+        'email',
         'password',
         'is_service_engineer',
         'phone_number',
-        
+
 
 
 
@@ -52,5 +52,9 @@ class Patient extends Model
     public function implant()
     {
         return $this->hasOne(Implant::class);
+    }
+    public function ipgDevices()
+    {
+        return $this->hasMany(IpgDevice::class);
     }
 }

@@ -21,7 +21,8 @@ class CreatePatientsTable extends Migration
             
             $table->date('date_of_birth')->nullable();
             $table->string('patient_photo')->nullable();
-            $table->enum('gender', ['Male', 'Female', 'Other']);
+            // $table->enum('gender', ['Male', 'Female', 'Other']);
+            $table->enum('gender', ['Male', 'Female', 'Other'])->nullable();
             $table->string('address')->nullable();
             $table->string('state')->nullable();
             $table->string('city')->nullable();
