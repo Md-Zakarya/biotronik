@@ -10,9 +10,19 @@ use App\Models\PendingImplant;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Carbon\Carbon;
+use App\Services\S3StorageService;
+use App\Models\BackupService;
 
 class DistController extends Controller
 {
+
+    protected $s3Service;
+
+    public function __construct(S3StorageService $s3Service)
+    {
+        $this->s3Service = $s3Service;
+    }
+
     public function getDashboardCounts()
     {
         try {
@@ -21,19 +31,23 @@ class DistController extends Controller
                 ->where('service_completed', false)
                 ->whereNull('new_ipg_serial_number')
                 ->count();
-
+    
             // Get pending follow-up requests
             $pendingFollowUpsCount = FollowUpRequest::where('status', 'pending')->count();
-
+    
+            // Get pending backup service requests
+            $pendingBackupServicesCount = BackupService::where('status', 'pending')->count();
+    
             // Total actionables
-            $totalActionables = $pendingReplacementsCount + $pendingFollowUpsCount;
-
+            $totalActionables = $pendingReplacementsCount + $pendingFollowUpsCount + $pendingBackupServicesCount;
+    
             return response()->json([
                 'status' => 'success',
                 'data' => [
                     'total_actionables' => $totalActionables,
                     'pending_replacements' => $pendingReplacementsCount,
-                    'pending_follow_ups' => $pendingFollowUpsCount
+                    'pending_follow_ups' => $pendingFollowUpsCount,
+                    'pending_backup_services' => $pendingBackupServicesCount
                 ]
             ], 200);
         } catch (\Exception $e) {
@@ -65,7 +79,7 @@ class DistController extends Controller
                 'patient' => [
                     'id' => $pendingImplant->patient->id,
                     'patient_photo' => $pendingImplant->patient->patient_photo
-                        ? \Storage::disk('s3')->url($pendingImplant->patient->patient_photo)
+                        ? $this->s3Service->getFileUrl($pendingImplant->patient->patient_photo)
                         : null,
                     'name' => $pendingImplant->patient->name,
                     'date_of_birth' => $pendingImplant->patient->date_of_birth,
@@ -98,9 +112,15 @@ class DistController extends Controller
                     'lead_brand' => $pendingImplant->lead_brand,
                 ],
                 'documents' => [
-                    'patient_id_card' => $pendingImplant->patient_id_card ? \Storage::disk('s3')->url($pendingImplant->patient_id_card) : null,
-                    'warranty_card' => $pendingImplant->warranty_card ? \Storage::disk('s3')->url($pendingImplant->warranty_card) : null,
-                    'interrogation_report' => $pendingImplant->interrogation_report ? \Storage::disk('s3')->url($pendingImplant->interrogation_report) : null,
+                    'patient_id_card' => $pendingImplant->patient_id_card
+                        ? $this->s3Service->getFileUrl($pendingImplant->patient_id_card)
+                        : null,
+                    'warranty_card' => $pendingImplant->warranty_card
+                        ? $this->s3Service->getFileUrl($pendingImplant->warranty_card)
+                        : null,
+                    'interrogation_report' => $pendingImplant->interrogation_report
+                        ? $this->s3Service->getFileUrl($pendingImplant->interrogation_report)
+                        : null,
                 ],
                 'status' => $pendingImplant->status,
             ];
@@ -232,6 +252,8 @@ class DistController extends Controller
             ], 500);
         }
     }
+
+    //does not have backup and has been tested to work well. 
     public function listAllPendingItems(Request $request)
     {
         try {
@@ -301,6 +323,8 @@ class DistController extends Controller
             ], 500);
         }
     }
+
+
     public function listAllPendingRequests(Request $request)
     {
         try {
@@ -570,7 +594,7 @@ class DistController extends Controller
         }
     }
 
-    public function getAllActionables()
+    public function getAllActionables1()
     {
         try {
             // Get pending replacement requests with timestamps
@@ -633,6 +657,94 @@ class DistController extends Controller
             ], 500);
         }
     }
+
+    public function getAllActionables()
+    {
+        try {
+            // Get pending replacement requests with timestamps
+            $replacementRequests = DeviceReplacement::with(['patient', 'implant', 'serviceEngineer'])
+                ->where('status', DeviceReplacement::STATUS_APPROVED)
+                ->whereNull('new_ipg_serial_number')
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'replacement',
+                        'patient_name' => $request->patient->name,
+                        'hospital_name' => $request->hospital_name,
+                        'ticket_type' => $request->is_warranty_claim ? 'Warranty Replacement' : 'Paid Replacement',
+                        'status' => 'Pending',
+                        'service_engineer' => $request->serviceEngineer ? $request->serviceEngineer->name : null,
+                        'created_at' => $request->created_at->toDateTimeString()
+                    ];
+                });
+
+            // Get pending follow-up requests with timestamps
+            $followUpRequests = FollowUpRequest::with(['patient'])
+                ->where('status', FollowUpRequest::STATUS_PENDING)
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'follow-up',
+                        'patient_name' => $request->patient->name,
+                        'hospital_name' => $request->hospital_name,
+                        'ticket_type' => 'Follow-up Service',
+                        'status' => 'Pending',
+                        'service_engineer' => null,
+                        'created_at' => $request->created_at->toDateTimeString()
+                    ];
+                });
+
+            // Get pending backup service requests
+            $backupRequests = BackupService::with(['patient', 'serviceEngineer'])
+                ->where('status', 'pending')
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'backup',
+                        'patient_name' => $request->patient->name,
+                        'hospital_name' => $request->hospital_name,
+                        'ticket_type' => 'Backup Service',
+                        'status' => 'Pending',
+                        'service_engineer' => $request->serviceEngineer ? $request->serviceEngineer->name : null,
+                        'created_at' => $request->created_at->toDateTimeString()
+                    ];
+                });
+
+            // Convert all collections to arrays and merge them
+            $allRequests = array_merge(
+                $replacementRequests->toArray(),
+                $followUpRequests->toArray(),
+                $backupRequests->toArray()
+            );
+
+            // Sort the merged array by created_at
+            usort($allRequests, function ($a, $b) {
+                return strtotime($b['created_at']) - strtotime($a['created_at']);
+            });
+
+            return response()->json([
+                'message' => 'Actionable requests retrieved successfully',
+                'data' => [
+                    'total_actionables' => count($allRequests),
+                    'replacement_requests' => $replacementRequests->count(),
+                    'follow_up_requests' => $followUpRequests->count(),
+                    'backup_requests' => $backupRequests->count(),
+                    'requests' => $allRequests
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving actionable requests',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+
 
 
 

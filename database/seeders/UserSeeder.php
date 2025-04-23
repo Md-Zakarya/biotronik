@@ -99,6 +99,32 @@ class UserSeeder extends Seeder
             throw $e;
         }
 
+        // Create Logistics User
+        Log::info('Creating Logistics User...');
+        try {
+            $logistics = User::create([
+                'name' => 'Logistics Manager',
+                'email' => 'logistics@espandan.com',
+                'password' => Hash::make('password123'),
+                'phonenumber' => '4567890123'
+            ]);
+            Log::info('Logistics User created successfully.', ['user_id' => $logistics->id]);
+
+            // Assign 'logistics' role to the Logistics User
+            Log::info('Assigning "logistics" role to Logistics User...');
+            $logistics->assignRole('logistics');
+            Log::info('Role "logistics" assigned successfully to Logistics User.', ['user_id' => $logistics->id]);
+
+            // Create token for Logistics User
+            Log::info('Creating token for Logistics User...');
+            $logisticsToken = $logistics->createToken('LogisticsToken')->plainTextToken;
+            Log::info('Token created successfully for Logistics User.', ['user_id' => $logistics->id]);
+            echo "Logistics Token: $logisticsToken\n";
+        } catch (\Exception $e) {
+            Log::error('Error creating Logistics User.', ['error' => $e->getMessage()]);
+            throw $e;
+        }
+
         // Log the completion of the seeding process
         Log::info('UserSeeder completed successfully.');
     }

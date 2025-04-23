@@ -282,7 +282,7 @@ class FollowUpController extends Controller
         ], 200);
     }
 
-    public function getPatientPaymentHistory(Request $request)
+    public function getPatientPaymentHistory1(Request $request)
     {
         try {
             $patientId = $request->user()->id;
@@ -319,6 +319,61 @@ class FollowUpController extends Controller
                         'total_payments' => $payments->count(),
                         'breakdown' => $paymentFrequency,
                         'paidOrNot' => 1
+                    ]
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving payment history',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getPatientPaymentHistory(Request $request)
+    {
+        try {
+            $patientId = $request->user()->id;
+
+            $payments = Payment::where('patient_id', $patientId)
+                ->orderBy('payment_date', 'desc')
+                ->get();
+
+            // If no payments found at all
+            if ($payments->isEmpty()) {
+                return response()->json([
+                    'message' => 'No payment history found', // Changed message
+                    'data' => [
+                        'payment_frequency' => 0,
+                        'payments' => [],
+                        'paidOrNot' => 0 // No payments means not paid for follow-up
+                    ]
+                ], 200);
+            }
+
+            // Check specifically for completed follow-up payments
+            $hasPaidForFollowUp = $payments->where('payment_type', 'follow_up')
+                                           ->where('payment_status', 'completed') // Ensure payment is completed
+                                           ->isNotEmpty();
+
+            // Count frequency of all payments by payment_type
+            $paymentFrequency = $payments->groupBy('payment_type')
+                ->map(function ($group) {
+                    return [
+                        'count' => $group->count(),
+                        'total_amount' => $group->sum('amount')
+                    ];
+                });
+
+            return response()->json([
+                'message' => 'Payment history retrieved successfully',
+                'data' => [
+                    'payment_frequency' => [
+                        'total_payments' => $payments->count(),
+                        'breakdown' => $paymentFrequency,
+                        // Set paidOrNot based on whether a completed follow-up payment exists
+                        'paidOrNot' => $hasPaidForFollowUp ? 1 : 0 
                     ]
                 ]
             ], 200);
