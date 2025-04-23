@@ -8,24 +8,30 @@ use Illuminate\Database\Eloquent\Model;
 class IpgSerial extends Model
 {
     use HasFactory;
-    
+
     protected $fillable = [
         'ipg_serial_number',
         'model_number',
-        'distributor_id'
+        'distributor_id',
+        'patient_id',
+        'date_added' 
     ];
 
     public function ipgModel()
     {
         return $this->belongsTo(IpgModel::class, 'model_number', 'model_number');
     }
-    
+
     public function ipgDevice()
     {
         return $this->hasOne(IpgDevice::class, 'ipg_serial_number', 'ipg_serial_number');
     }
     public function distributor()
-{
-    return $this->belongsTo(\App\Models\User::class, 'distributor_id');
-}
+    {
+        return $this->belongsTo(\App\Models\User::class, 'distributor_id');
+    }
+    public function patient()
+    {
+        return $this->belongsTo(Patient::class);
+    }
 }

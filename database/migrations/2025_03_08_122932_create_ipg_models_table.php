@@ -19,6 +19,7 @@ return new class extends Migration
             $table->boolean('cardiomessenger_enable')->default(false);
             $table->integer('warranty')->default(0); // Warranty in days
             $table->boolean('mr_enabled')->default(false);
+            $table->boolean('lifetime_warranty')->default(false);
             $table->timestamps();
         });
     }

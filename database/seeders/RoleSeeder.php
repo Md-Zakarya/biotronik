@@ -17,7 +17,8 @@ class RoleSeeder extends Seeder
             'supply',
             'back-office',
             'zonal-manager',
-            'user' 
+            'user' ,
+            'logistics'
         ];
 
         foreach ($roles as $role) {

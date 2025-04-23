@@ -40,5 +40,13 @@ class RolePermissionSeeder extends Seeder
             'view-inventory',
             'manage-inventory'
         ]);
+
+         // Add Logistics Role
+         $logisticsRole = Role::findByName('logistics');
+         $logisticsRole->givePermissionTo([
+             'view-patient',
+             'manage-shipping',
+             'update-delivery-status'
+         ]);
     }
 }

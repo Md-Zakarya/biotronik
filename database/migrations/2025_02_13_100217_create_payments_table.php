@@ -12,13 +12,14 @@ return new class extends Migration
             $table->id();
             $table->foreignId('patient_id')->constrained();
             $table->unsignedBigInteger('service_engineer_id')->nullable();
-            $table->string('gst_number');
-            $table->string('pan_number');
+            $table->string('gst_number')->nullable();
+            $table->string('pan_number')->nullable();
             $table->decimal('amount', 10, 2);
             $table->string('payment_status');
             $table->datetime('payment_date');
             $table->string('payment_type');
             $table->json('payment_details');
+            $table->index('payment_type');
             $table->timestamps();
             
         });

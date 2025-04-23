@@ -1,0 +1,68 @@
+Request ID Flow
+1. Patient Inputs Delivery Details:
+
+Name
+
+Phone Number
+
+Delivery Address
+
+State
+
+City
+
+PIN Code
+
+2. Payment Process:
+
+GSTIN
+
+PAN
+
+Payment options include Card and UPI (integrated as commonly done in other systems).
+
+3. Request Generation:
+
+After the delivery details and payment are submitted, a request is generated for the ID Request.
+
+4. Track Order API:
+
+An API is available to track the order, providing the status of the request.
+
+Admin Panel Flow
+5. Admin Panel Displays Order Information:
+
+Patient Name
+
+State and City
+
+Toggleable status
+
+Shipping Partner
+
+Delivered or Not Delivered
+
+6. Admin Panel Status Updates:
+
+The admin panel allows updating the delivery status to the following:
+
+Printing (Default status when the request is made)
+
+Delivery Partner Picked (The order is registered with the shipping partner and tracking ID is generated)
+
+In Transit
+
+Delivered
+
+Shipping Process Flow:
+Delivery Partner Picked:
+
+Once the order is marked as "Delivery Partner Picked", it is registered with the shipping partner, and the tracking ID is generated.
+
+In Transit:
+
+The order is now being transported and can be tracked via the tracking ID.
+
+Delivered:
+
+Once the delivery is confirmed, the order status is updated to Delivered.

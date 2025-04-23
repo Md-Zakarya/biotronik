@@ -514,7 +514,7 @@ class FollowUpController extends Controller
         }
     }
 
-    public function getAllActionables(Request $request)
+    public function getAllActionables1(Request $request)
     {
         try {
             $serviceEngineerId = $request->user()->id;
@@ -533,7 +533,7 @@ class FollowUpController extends Controller
                         'ticket_type' => 'Follow-up Service',
                         'status' => 'pending',
                         'appointment_datetime' => $request->appointment_datetime,
-                        // 'created_at' => $request->created_at->toDateTimeString()
+                        'created_at' => $request->created_at->toDateTimeString()
                     ];
                 });
 
@@ -581,8 +581,96 @@ class FollowUpController extends Controller
             ], 500);
         }
     }
+    public function getAllActionables(Request $request)
+    {
+        try {
+            $serviceEngineerId = $request->user()->id;
 
+            // Get follow-up requests assigned to this service engineer
+            $followUpRequests = FollowUpRequest::with(['patient'])
+                ->where('service_engineer_id', $serviceEngineerId)
+                ->whereIn('status', [FollowUpRequest::STATUS_APPROVED, FollowUpRequest::STATUS_PENDING])
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'follow-up',
+                        'patient_name' => $request->patient->name,
+                        'hospital_name' => $request->hospital_name ?? 'Not specified',
+                        'ticket_type' => 'Follow-up Service',
+                        'status' => 'pending',
+                        'appointment_datetime' => $request->appointment_datetime,
+                        'created_at' => $request->created_at->toDateTimeString()
+                    ];
+                });
 
+            // Get replacement requests assigned to this service engineer
+            // Added where clause to only include incomplete services
+            $replacementRequests = \App\Models\DeviceReplacement::with(['patient'])
+                ->where('service_engineer_id', $serviceEngineerId)
+                ->whereIn('status', ['approved', 'pending', 'registered'])
+                ->where('service_completed', false)  // Only get replacements that haven't been completed
+                ->whereNotNull('new_ipg_serial_number') // Exclude if new_ipg_serial_number is null
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'replacement',
+                        'patient_name' => $request->patient->name,
+                        'hospital_name' => $request->hospital_name ?? 'Not specified',
+                        'ticket_type' => $request->is_warranty_claim ? 'Warranty Replacement' : 'Paid Replacement',
+                        'status' => 'pending',
+                        'appointment_datetime' => $request->planned_replacement_date,
+                        'created_at' => $request->created_at->toDateTimeString()
+                    ];
+                });
+
+            // Get backup service requests assigned to this service engineer
+            $backupServiceRequests = \App\Models\BackupService::with(['patient'])
+                ->where('service_engineer_id', $serviceEngineerId)
+                ->whereIn('status', ['assigned', 'confirmed'])
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'backup',
+                        'patient_name' => $request->patient->name,
+                        'hospital_name' => $request->hospital_name ?? 'Not specified',
+                        'ticket_type' => 'Backup Service',
+                        'status' => 'pending',
+                        'appointment_datetime' => $request->appointment_datetime,
+                        'created_at' => $request->created_at->toDateTimeString()
+                    ];
+                });
+
+            // Combine and sort all actionables by creation date (newest first)
+            $allActionables = array_merge(
+                $followUpRequests->toArray(),
+                $replacementRequests->toArray(),
+                $backupServiceRequests->toArray()
+            );
+            usort($allActionables, function ($a, $b) {
+                return strtotime($b['created_at']) - strtotime($a['created_at']);
+            });
+
+            return response()->json([
+                'message' => 'Service engineer actionables retrieved successfully',
+                'data' => [
+                    'total_actionables' => count($allActionables),
+                    'follow_up_requests' => $followUpRequests->count(),
+                    'replacement_requests' => $replacementRequests->count(),
+                    'backup_requests' => $backupServiceRequests->count(),
+                    'actionables' => $allActionables
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving actionable requests',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
     /**
      * Get only the count of actionable items for badge/notification display
@@ -591,7 +679,7 @@ class FollowUpController extends Controller
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function getActionableCounts(Request $request)
+    public function getActionableCounts1(Request $request)
     {
         try {
             $serviceEngineerId = $request->user()->id;
@@ -617,6 +705,49 @@ class FollowUpController extends Controller
                     'total_actionables' => $totalActionables,
                     'follow_up_requests' => $followUpCount,
                     'replacement_requests' => $replacementCount
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving actionable counts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getActionableCounts(Request $request)
+    {
+        try {
+            $serviceEngineerId = $request->user()->id;
+
+            // Count follow-up requests
+            $followUpCount = FollowUpRequest::where('service_engineer_id', $serviceEngineerId)
+                ->whereIn('status', [FollowUpRequest::STATUS_APPROVED, FollowUpRequest::STATUS_PENDING])
+                ->count();
+
+            // Count device replacements
+            $replacementCount = \App\Models\DeviceReplacement::where('service_engineer_id', $serviceEngineerId)
+                ->whereIn('status', ['approved', 'pending', 'registered'])
+                ->where('service_completed', false)
+                ->whereNotNull('new_ipg_serial_number')
+                ->count();
+
+            // Count backup service requests
+            $backupCount = \App\Models\BackupService::where('service_engineer_id', $serviceEngineerId)
+                ->whereIn('status', ['assigned', 'confirmed'])
+                ->count();
+
+            // Total count
+            $totalActionables = $followUpCount + $replacementCount + $backupCount;
+
+            return response()->json([
+                'message' => 'Actionable counts retrieved successfully',
+                'data' => [
+                    'total_actionables' => $totalActionables,
+                    'follow_up_requests' => $followUpCount,
+                    'replacement_requests' => $replacementCount,
+                    'backup_requests' => $backupCount
                 ]
             ], 200);
 

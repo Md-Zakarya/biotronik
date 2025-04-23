@@ -15,7 +15,7 @@ class AdminAuthController extends Controller
     {
         // Validate request
         $request->validate([
-            'role' => 'required|string|in:admin,sales-representative,distributor,finance,supply,back-office,zonal-manager',
+            'role' => 'required|string|in:admin,sales-representative,distributor,finance,supply,back-office,zonal-manager,logistics',
             'email' => 'required|string|email|max:255|lowercase',
             'password' => 'required|string|min:8',
         ], [
