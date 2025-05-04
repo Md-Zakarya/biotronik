@@ -8,9 +8,23 @@ use Illuminate\Http\Request;
 use App\Events\FollowUpStatusChanged;
 use App\Events\FollowUpCompleted;
 use Illuminate\Support\Facades\Schema;
+use App\Services\S3StorageService;
 
 class FollowUpController extends Controller
-{
+{   
+
+
+    protected $s3Service; // Add property for S3 Service
+
+    // Inject S3StorageService via constructor
+    public function __construct(S3StorageService $s3Service)
+    {
+        $this->s3Service = $s3Service;
+    }
+
+
+
+
     /**
      * Get follow-up request status for distributor
      */
@@ -18,9 +32,20 @@ class FollowUpController extends Controller
     {
         try {
             $followUp = FollowUpRequest::with([
-                'patient:id,name,phone_number,email,date_of_birth,gender',
+                'patient:id,name,phone_number,email,date_of_birth,gender,patient_photo',
                 'serviceEngineer:id,name,phonenumber'
-            ])->findOrFail($id);
+            ])->findOrFail($id);    
+
+
+             // Prepare patient data separately to modify the photo path
+             $patientData = $followUp->patient->toArray();
+             if (!empty($patientData['patient_photo'])) {
+                 // Generate the S3 URL for the patient photo
+                 $patientData['patient_photo_url'] = $this->s3Service->getFileUrl($patientData['patient_photo']);
+             } else {
+                 $patientData['patient_photo_url'] = null; // Ensure the field exists even if null
+             }
+ 
 
             return response()->json([
                 'status' => $followUp->status,
@@ -35,7 +60,7 @@ class FollowUpController extends Controller
                     'accompanying_person_name' => $followUp->accompanying_person_name,
                     'accompanying_person_phone' => $followUp->accompanying_person_phone,
                 ],
-                'patient' => $followUp->patient,
+                'patient' => $patientData,
                 'service_engineer' => $followUp->serviceEngineer,
              
             ]);

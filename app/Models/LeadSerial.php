@@ -18,7 +18,8 @@ class LeadSerial extends Model
         'serial_number',
         'lead_model_number',
         'distributor_id',
-        'is_assigned',
+        'is_implanted',
+        'patient_id',
     ];
 
     /**

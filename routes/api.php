@@ -18,8 +18,11 @@ use App\Http\Controllers\PatientControllers\FollowUpController;
 
 use App\Http\Controllers\Dist\FollowUpController as DistFollowUpController;
 use App\Http\Controllers\Dist\IpgModelController;
+use App\Http\Controllers\Dist\UpgradeImplantController as DisUpgradeImplantController;
+
 
 use App\Http\Controllers\SE\FollowUpController as SEFollowUpController;
+use App\Http\Controllers\SE\UpgradeImplantController as SEUpgradeImplantController;
 
 use App\Http\Controllers\Admin\LeadController;
 
@@ -32,11 +35,14 @@ use App\Http\Controllers\PatientControllers\WarrantyExtensionController;
 
 use App\Http\Controllers\PatientControllers\BackupServiceController;
 use App\Http\Controllers\PatientControllers\IdRequestController;
+use App\Http\Controllers\PatientControllers\PatientUpgradeController;
 
 
 use App\Http\Controllers\Admin\YourActionables;
 use App\Http\Controllers\SE\BackupServices;
 use App\Http\Controllers\Admin\AdminIdRequestController;
+
+
 
 
 
@@ -82,6 +88,7 @@ Route::middleware(['auth:sanctum', 'role:sales-representative'])->group(function
     Route::get('/service-engineer/implant-list', [PatientImplantController::class, 'getEngineerImplants']);
     Route::get('/service-engineer/implant-list/{id}', [PatientImplantController::class, 'getImplantAndPatientDetails']);
     Route::post('/service-engineer/implant-replacement', [PatientImplantController::class, 'submitReplacement']);
+    Route::get('/service-engineer/replacement-request/{id}', [SEFollowUpController::class, 'getReplacementDetails']);
     Route::get('/service-engineer/get-implant-details/{ipg_serial_number}', [PatientImplantController::class, 'getPatientDetailsByIpg']);
 
 
@@ -110,7 +117,7 @@ Route::middleware(['auth:sanctum', 'role:sales-representative'])->group(function
     Route::get('/service-engineer/actionable-counts', [SEFollowUpController::class, 'getActionableCounts']);
 
     Route::get('/service-engineer/actionables', [SEFollowUpController::class, 'getAllActionables']);
-    Route::get('/service-engineer/replacement-request/{id}', [SEFollowUpController::class, 'getReplacementDetails']);
+
     //implant replacement new assigned by the distrubuter
     Route::get('/service-engineer/assigned-ipg-serials', [SEFollowUpController::class, 'getAssignedIpgSerials']);
 
@@ -118,7 +125,17 @@ Route::middleware(['auth:sanctum', 'role:sales-representative'])->group(function
     //backup services 
     Route::get('/service-engineer/backup-service/{id}', [BackupServices::class, 'getBackupServiceDetails']);
     Route::post('/service-engineer/backup-service/{id}/complete', [BackupServices::class, 'completeBackupService']);
+    //this list includes both pending and completed services
+    Route::get('/service-engineer/backup-services', [BackupServices::class, "getAllAssignedBackupServices"]);
 
+
+
+    // upgrade-Implant
+    Route::get('/service-engineer/upgrade-implant/{id}', [SEUpgradeImplantController::class, 'getUpgradeDetails']);
+    Route::post('/service-engineer/upgrade-implant/{id}/complete', [SEUpgradeImplantController::class, 'completeUpgrade']);
+
+
+    
 });
 
 Route::middleware(['auth:sanctum', 'role:admin|logistics'])->group(function () {
@@ -169,7 +186,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     });
 
 
-    Route::get('/admin/dashboard-counts', [AdminController::class, 'getDashboardCounts']);
+    Route::get('/admin/dashboard-counts', [AdminController::class, 'getAdminDashboardCounts']);
 
 
     // Add new employee management routes
@@ -210,7 +227,7 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     // Route::get('/admin/lead-models/export', [LeadController::class, 'exportLeadModelsCSV']);
 
 
- 
+
 
     Route::get('/admin/your-actionables', [DistController::class, 'listAllPendingItems']);
     Route::get('/admin/pending-implant/{id}', [DistController::class, 'getPendingImplantDetails']);
@@ -226,7 +243,10 @@ Route::middleware(['auth:sanctum', 'role:distributor'])->group(function () {
     Route::get('/admin/distributors/dashboard-counts', [DistController::class, 'getDashboardCounts']);
     Route::get('/admin/distributors', [DistController::class, 'listRequests']);
     Route::get('/admin/distributors/sales-representatives', [DistController::class, 'listSalesRepresentatives']);
-    Route::post('/admin/distributors/assign-engineer', [DistController::class, 'assignServiceEngineer']);
+    // Route::post('/admin/distributors/assign-engineer', [DistController::class, 'assignServiceEngineer']);
+    Route::post('/admin/distributors/assign-engineer', [DistController::class, 'assignServiceEngineerWithImplantPreparation']);
+
+
     Route::get('/admin/distributors/replacement/{id}', [DistController::class, 'getReplacementDetails']);
     Route::post('/admin/distributors/replacement/assign-ipg-serial', [DistController::class, 'assignNewIpgSerialNumber']);
 
@@ -250,6 +270,13 @@ Route::middleware(['auth:sanctum', 'role:distributor'])->group(function () {
     Route::get('/admin/distributors/backup-service/{id}', [YourActionables::class, 'getBackupServiceDetails']);
     Route::post('/admin/distributors/backup-service/{id}/assign', [YourActionables::class, 'assignServiceEngineer']);
     Route::post('/admin/distributors/backup-service/{id}/confirm', [YourActionables::class, 'confirmBackupService']);
+
+
+    Route::get('/admin/distributors/upgrade-implant/pending', [DisUpgradeImplantController::class, 'getPendingUpgrades']);
+    Route::post('/admin/distributors/upgrade-implant/{id}/assign', [DisUpgradeImplantController::class, 'assignServiceEngineer']);
+    Route::get('/admin/distributors/upgrade-implant/{id}/details', [DisUpgradeImplantController::class, 'getPendingUpgradeDetails']);
+    
+
 
 });
 
@@ -321,6 +348,16 @@ Route::middleware('auth:sanctum')->group(function () {
     //ID Request Routes patient section
     Route::post('/patient/id-request', [IdRequestController::class, 'submitRequest']);
     Route::get('/patient/id-request/status', [IdRequestController::class, 'trackRequest']);
+    
+    
+
+    Route::post('/patient/upgrade-implant-request', [PatientUpgradeController::class, 'requestUpgrade']);
+    Route::get('/patient/upgrade-implant/requests', [PatientUpgradeController::class, 'getUpgradeRequests']);
+
+
+
+
+
 
 
 });
@@ -365,6 +402,8 @@ Route::get('/get-all-ipg-models', [IpgModelController::class, 'index']);
 Route::get('ipg-serials/search', [IpgModelController::class, 'searchSerials']);
 
 Route::get('ipg-serials/search-available-serials', [IpgModelController::class, 'searchAvailableSerials']);
+Route::get('ipg-serials/search-available-ipg-devices', [IpgModelController::class, 'searchNonImplantedSerials']);
+
 Route::get('/lead-serials/search', [LeadController::class, 'searchLeadSerials']);
 
 

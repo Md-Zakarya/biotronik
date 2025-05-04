@@ -402,7 +402,12 @@ class LeadController extends Controller
     public function searchLeadSerials(Request $request)
     {
         try {
-            $query = LeadSerial::with(['leadModel', 'distributor']);
+            $query = LeadSerial::with(['leadModel', 'distributor'])
+                    ->where('is_implanted',  false);
+
+
+                    //comment the above query and uncomment the query down below for implated lead to appear as well 
+                    // $query = LeadSerial::with(['leadModel', 'distributor']);
 
             // Search by serial number
             if ($request->filled('serial_number')) {

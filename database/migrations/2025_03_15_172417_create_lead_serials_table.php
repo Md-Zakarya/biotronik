@@ -19,6 +19,12 @@ return new class extends Migration
             $table->foreign('lead_model_number')->references('model_number')->on('lead_models')->onDelete('cascade');
             $table->unsignedBigInteger('distributor_id')->nullable();
             $table->foreign('distributor_id')->references('id')->on('users');
+          
+            $table->boolean('is_implanted')->default(false);
+            $table->unsignedBigInteger('patient_id')->nullable();
+            $table->foreign('patient_id')->references('id')->on('patients');
+          
+          
             // $table->boolean('is_assigned')->default(false);
             $table->timestamps();
             
@@ -26,6 +32,8 @@ return new class extends Migration
             $table->index('serial_number');
             $table->index('lead_model_number');
             // $table->index('is_assigned');
+            $table->index('is_implanted');
+            $table->index('patient_id');
         });
     }
 

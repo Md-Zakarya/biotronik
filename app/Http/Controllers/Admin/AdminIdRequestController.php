@@ -34,7 +34,8 @@ class AdminIdRequestController extends Controller
                 'shipping_partner', // Assuming 'shipping_partner' is the field name
                 'delivery_address', // Add delivery address
                 'phone_number',     // Add phone number
-                'pin_code'           // Add pincode
+                'pin_code',
+                'tracking_id'           // Add pincode
             ])->with([
                         'patient' => function ($query) {
                             // Select only the name from the patient table
@@ -60,7 +61,8 @@ class AdminIdRequestController extends Controller
                     'shipping_partner' => $request->shipping_partner,
                     'delivery_address' => $request->delivery_address, // Include delivery address
                     'phone_number' => $request->phone_number,         // Include phone number
-                    'pincode' => $request->pin_code,                   // Include pincode
+                    'pincode' => $request->pin_code, 
+                    'tracking_id' => $request->tracking_id                       // Include pincode
                 ];
             });
 

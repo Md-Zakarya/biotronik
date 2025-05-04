@@ -11,6 +11,7 @@ class FollowUpRequest extends Model
     const STATUS_APPROVED = 'approved';
     const STATUS_REJECTED = 'rejected';
     const STATUS_COMPLETED = 'completed';
+    public const STATUS_PAYMENT_PENDING = 'payment_pending';
 
     protected $fillable = [
         'follow_up_id',
