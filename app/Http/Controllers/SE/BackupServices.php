@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\SE;
 
 use App\Http\Controllers\Controller;
+use Exception;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Test\Constraint\ResponseFormatSame;
 
 class BackupServices extends Controller
 {
@@ -155,6 +157,54 @@ class BackupServices extends Controller
                 'message' => 'Error completing backup service request',
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+
+
+    /**
+     * Get all backup service requests assigned to the logged-in service engineer
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getAllAssignedBackupServices(Request $request)
+    {           
+        try {
+            $serviceEngineerId = $request->user()->id;
+            
+            // Get all backup service requests assigned to this service engineer 
+            $backupServices = \App\Models\BackupService::with(['patient'])
+                ->where('service_engineer_id', operator: $serviceEngineerId)
+                ->orderBy('appointment_datetime', 'asc')
+                ->get()
+                ->map(function ($service) {
+                    return [
+                        'id' => $service->id,
+                        'backup_id' => $service->backup_id,
+                        'patient_name' => $service->patient->name,
+                        'hospital_name' => $service->hospital_name,
+                        'state' => $service->state,
+                        'status' => $service->status,
+                        'service_type' => $service->service_type,
+                        'service_duration' => $service->service_duration,
+                        'appointment_datetime' => $service->appointment_datetime,
+                        'accompanying_person_name' => $service->accompanying_person_name,
+                        'accompanying_person_phone' => $service->accompanying_person_phone
+                    ];
+                });
+    
+            return response()->json([
+                'message' => 'Backup service requests retrieved successfully',
+                'data' => [
+                    'total_assigned' => $backupServices->count(),
+                    'backup_services' => $backupServices
+                ]
+            ], 200);
+    
+        } catch (Exception $e) {
+            \Log::error('Error in getAllAssignedBackupServices: ' . $e->getMessage());
+            return response()->json(['error' => 'Something went wrong'], 500);
         }
     }
 }

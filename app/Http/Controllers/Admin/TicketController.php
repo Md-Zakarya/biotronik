@@ -6,9 +6,19 @@ use App\Http\Controllers\Controller;
 use App\Models\DeviceReplacement;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+use App\Services\S3StorageService;
 
 class TicketController extends Controller
-{
+{   
+
+    protected $s3Service;
+
+    // Inject S3StorageService via constructor
+    public function __construct(S3StorageService $s3Service)
+    {
+        $this->s3Service = $s3Service;
+    }
+
     public function getAllReplacementRequests()
     {
         try {
@@ -92,6 +102,7 @@ class TicketController extends Controller
             // ];
 
             $data = [
+                'patient_photo' => $replacement->patient->patient_photo ? $this->s3Service->getFileUrl($replacement->patient->patient_photo) : null,
                 'name' => $replacement->patient->name,
                 'date_of_birth' => $replacement->patient->date_of_birth,
                 'gender' => $replacement->patient->gender,
@@ -103,10 +114,12 @@ class TicketController extends Controller
                 'channel_partner' => $replacement->channel_partner,       // Changed from implant->channel_partner
                 'reason_for_replacement' => $replacement->replacement_reason,
                 'planned_replacement_schedule' => Carbon::parse($replacement->planned_replacement_date)->format('Y-m-d H:i:s'),
-                'interrogation_report' => $replacement->interrogation_report_path,
-                'physician_report' => $replacement->prescription_path,
+                // 'interrogation_report' => $replacement->interrogation_report_path,
+                // 'physician_report' => $replacement->prescription_path,
                 'ipg_model_number' => $replacement->implant->ipg_model_number,
-                'ipg_model_name' => $replacement->implant->ipg_model
+                'ipg_model_name' => $replacement->implant->ipg_model,
+                'interrogation_report_url' => $this->s3Service->getFileUrl($replacement->interrogation_report_path),
+                'physician_report_url' => $this->s3Service->getFileUrl($replacement->prescription_path),
             ];
           
 

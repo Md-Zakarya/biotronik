@@ -28,6 +28,7 @@ class DeviceReplacement extends Model
         'service_engineer_id',
         'service_completed',
          'is_warranty_claim',
+         'new_ipg_serial_number'
         
     ];
 

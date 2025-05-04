@@ -55,7 +55,7 @@ class WarrantyExtensionController extends Controller
                 $newWarrantyDate = Carbon::parse($currentWarrantyDate)->addYears(99);
             } else {
                 $years = (int) $validated['warranty_type'];
-                $newWarrantyDate = Carbon::parse($currentWarrantyDate)->addYears($years);
+                $newWarrantyDate = now()->addYears($years);
             }
 
             // Store payment details in a structured format

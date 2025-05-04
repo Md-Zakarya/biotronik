@@ -133,7 +133,7 @@ class AdminController extends Controller
         }
     }
 
-    public function updateEmployee(Request $request, $id)
+    public function updateEmployee1(Request $request, $id)
     {
         // Validate request
         $validator = Validator::make($request->all(), [
@@ -205,6 +205,119 @@ class AdminController extends Controller
                 'employee_id' => $user->id,
                 'updated_fields' => array_keys($changedFields),
                 'roles' => $request->has('roles') ? $request->roles : $user->getRoleNames()
+            ]);
+
+            return response()->json([
+                'message' => 'Employee updated successfully',
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'roles' => $user->getRoleNames()
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error updating employee', [
+                'error' => $e->getMessage(),
+                'admin_id' => auth()->id(),
+                'employee_id' => $id
+            ]);
+
+            return response()->json([
+                'message' => 'Error updating employee',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    public function updateEmployee(Request $request, $id)
+    {
+        // Validate request
+        $validator = Validator::make($request->all(), [
+            'first_name' => 'sometimes|string|max:255',
+            'last_name' => 'sometimes|string|max:255',
+            'email' => 'sometimes|string|email|unique:users,email,' . $id,
+            'password' => 'nullable|string|min:8',
+            'roles' => 'sometimes|array|min:1',
+            'roles.*' => 'exists:roles,name'
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            // Find the user
+            $user = User::findOrFail($id);
+
+            // Track password update
+            $passwordUpdated = false;
+
+            // Update user details only if provided
+            if ($request->has('first_name') || $request->has('last_name')) {
+                // Get current first and last name if not provided
+                $nameParts = explode(' ', $user->name, 2);
+                $firstName = $request->input('first_name', $nameParts[0]);
+                $lastName = $request->input('last_name', $nameParts[1] ?? '');
+                $user->name = $firstName . ' ' . $lastName;
+            }
+
+            if ($request->has('email')) {
+                $user->email = $request->email;
+            }
+
+            // Only update password if provided
+            if ($request->has('password') && !empty($request->password)) {
+                $user->password = Hash::make($request->password);
+                $passwordUpdated = true;
+            }
+
+            $user->save();
+
+            // Only sync roles if provided in the request
+            if ($request->has('roles')) {
+                $user->syncRoles($request->roles);
+            }
+
+            // Update patient record if user is (or becoming) a service engineer
+            $hasServiceEngineerRole = $request->has('roles') ?
+                in_array('sales-representative', $request->roles) :
+                $user->hasRole('sales-representative');
+
+            if ($hasServiceEngineerRole) {
+                $patientData = [
+                    'Auth_name' => $user->name,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'is_service_engineer' => true
+                ];
+
+                // Only update password in patient record if it was changed
+                if ($passwordUpdated && $request->has('password')) {
+                    $patientData['password'] = Hash::make($request->password);
+                }
+
+                $patient = Patient::updateOrCreate(
+                    ['user_id' => $user->id],
+                    $patientData
+                );
+            }
+
+            // Log what fields were actually changed
+            $changedFields = array_filter($request->only(['first_name', 'last_name', 'email', 'password', 'roles']), function ($value) {
+                return !is_null($value) && (!is_string($value) || strlen($value) > 0);
+            });
+
+            Log::info('Employee updated', [
+                'admin_id' => auth()->id(),
+                'employee_id' => $user->id,
+                'updated_fields' => array_keys($changedFields),
+                'roles' => $request->has('roles') ? $request->roles : $user->getRoleNames(),
+                'patient_record_updated' => $hasServiceEngineerRole,
+                'password_updated' => $passwordUpdated
             ]);
 
             return response()->json([
@@ -365,6 +478,40 @@ class AdminController extends Controller
                     'pending_replacements' => $pendingReplacementsCount,
                     'pending_implants' => $pendingImplantsCount,
                     'pending_follow_ups' => $pendingFollowUpsCount
+                ]
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Error fetching dashboard counts', [
+                'error' => $e->getMessage(),
+                'admin_id' => auth()->id()
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Error fetching dashboard counts',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    public function getAdminDashboardCounts()
+    {
+        try {
+            // Get pending replacement requests count
+            $pendingReplacementsCount = DeviceReplacement::where('status', DeviceReplacement::STATUS_PENDING)->count();
+
+            // Get pending implants count
+            $pendingImplantsCount = \App\Models\PendingImplant::where('status', 'pending')->count();
+
+
+            // Total actionables
+            $totalActionables = $pendingReplacementsCount + $pendingImplantsCount;
+
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'total_actionables' => $totalActionables,
+                    'pending_replacements' => $pendingReplacementsCount,
+                    'pending_implants' => $pendingImplantsCount,
                 ]
             ], 200);
         } catch (\Exception $e) {

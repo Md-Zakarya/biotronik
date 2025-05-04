@@ -14,7 +14,8 @@ class IpgSerial extends Model
         'model_number',
         'distributor_id',
         'patient_id',
-        'date_added' 
+        'date_added', 
+        'is_implanted',
     ];
 
     public function ipgModel()

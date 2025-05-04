@@ -694,7 +694,76 @@ class IpgModelController extends Controller
 
 
 
+    /**
+     * Search for non-implanted IPG serials
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function searchNonImplantedSerials(Request $request)
+    {
+        try {
+            // Start with base query
+            $query = IpgSerial::select('id', 'ipg_serial_number', 'model_number')
+                ->with('ipgModel:model_number,model_name,device_type')
+                ->where('is_implanted', false);
 
+            // Apply search filter if provided
+            if ($request->filled('search')) {
+                $searchTerm = $request->input('search');
+                $query->where('ipg_serial_number', 'like', "%{$searchTerm}%");
+            }
+
+            // Apply optional distributor filter
+            if ($request->filled('distributor_id')) {
+                $query->where('distributor_id', $request->input('distributor_id'));
+            }
+
+            // Apply optional model filter
+            if ($request->filled('model_number')) {
+                $query->where('model_number', $request->input('model_number'));
+            }
+
+            // Apply pagination with customizable limit
+            $limit = $request->input('limit', 50);
+            $serials = $query->limit($limit)->get();
+
+            // Format serials data for dropdown display
+            $formattedSerials = $serials->map(function ($serial) {
+                // Create readable model info display
+                $modelInfo = $serial->ipgModel
+                    ? " ({$serial->ipgModel->model_name} - {$serial->ipgModel->device_type})"
+                    : "";
+
+                return [
+                    'id' => $serial->id,
+                    'value' => $serial->ipg_serial_number,
+                    'label' => $serial->ipg_serial_number . $modelInfo,
+          
+                    'model_number' => $serial->model_number,
+                    'model_name' => $serial->ipgModel ? $serial->ipgModel->model_name : null,
+                    'device_type' => $serial->ipgModel ? $serial->ipgModel->device_type : null
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $formattedSerials
+            ]);
+        } catch (\Exception $e) {
+            // Log the error
+            \Log::error('Failed to search non-implanted IPG serials', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to search non-implanted IPG serials',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
 }
 
