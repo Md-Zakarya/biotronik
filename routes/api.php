@@ -237,6 +237,16 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     //request ID flow
     Route::get('/admin/id-requests', [AdminIdRequestController::class, 'index']);
     Route::put('/admin/id-requests/{id}/status', [AdminIdRequestController::class, 'updateStatus']);
+
+
+
+    // reports section flow API endpoints
+    Route::get('/admin/reports/implants', [AdminController::class, 'getImplantReport']);
+    Route::get('/admin/reports/implants/export/csv', [AdminController::class, 'exportImplantReportCsv']);
+    Route::get('/admin/reports/implants/export/pdf', [AdminController::class, 'exportImplantReportPdf']);
+
+    
+
 });
 
 Route::middleware(['auth:sanctum', 'role:distributor'])->group(function () {

@@ -354,8 +354,8 @@ class FollowUpController extends Controller
 
             // Check specifically for completed follow-up payments
             $hasPaidForFollowUp = $payments->where('payment_type', 'follow_up')
-                                           ->where('payment_status', 'completed') // Ensure payment is completed
-                                           ->isNotEmpty();
+                ->where('payment_status', 'completed') // Ensure payment is completed
+                ->isNotEmpty();
 
             // Count frequency of all payments by payment_type
             $paymentFrequency = $payments->groupBy('payment_type')
@@ -373,7 +373,7 @@ class FollowUpController extends Controller
                         'total_payments' => $payments->count(),
                         'breakdown' => $paymentFrequency,
                         // Set paidOrNot based on whether a completed follow-up payment exists
-                        'paidOrNot' => $hasPaidForFollowUp ? 1 : 0 
+                        'paidOrNot' => $hasPaidForFollowUp ? 1 : 0
                     ]
                 ]
             ], 200);
@@ -398,24 +398,25 @@ class FollowUpController extends Controller
 
         $patientId = $user->id;
 
-        // Get all payments ordered by most recent first
+        // Get all follow_up payments ordered by most recent first
         $payments = Payment::where('patient_id', $patientId)
+            ->where('payment_type', 'follow_up') // Filter for follow_up payments only
             ->orderBy('created_at', 'desc')
             ->get();
 
         if ($payments->isEmpty()) {
             return response()->json([
                 'paymentStatus' => 'payment_required',
-                'message' => 'No payment records found. Payment is required.',
+                'message' => 'No follow-up payment records found. Payment is required.',
                 'hasPaid' => false,
                 'paymentHistory' => []
             ], 200);
         }
 
-        // Get the most recent payment
+        // Get the most recent follow_up payment
         $latestPayment = $payments->first();
 
-        // Format the payment history
+        // Format the payment history (only follow_up payments)
         $paymentHistory = $payments->map(function ($payment) {
             return [
                 'id' => $payment->id,
@@ -436,7 +437,7 @@ class FollowUpController extends Controller
 
         if ($latestPayment->payment_status === 'completed') {
             $paymentStatus = 'paid';
-            $message = 'Payment has been completed successfully.';
+            $message = 'Follow-up payment has been completed successfully.';
             $hasPaid = true;
             $paymentBy = isset($latestPayment->payment_details['paid_by']) ? $latestPayment->payment_details['paid_by'] : 'patient';
 
@@ -448,7 +449,7 @@ class FollowUpController extends Controller
             }
         } else {
             $paymentStatus = 'pending';
-            $message = 'Payment is pending. Patient needs to complete payment.';
+            $message = 'Follow-up payment is pending. Patient needs to complete payment.';
             $hasPaid = false;
 
             // Get service engineer name from users table if available
@@ -466,7 +467,7 @@ class FollowUpController extends Controller
             'paymentBy' => $paymentBy ?? 'patient',
             'lastPaymentDate' => $latestPayment->created_at,
             'amount' => $latestPayment->amount,
-            'paymentType' => $latestPayment->payment_type,
+            'paymentType' => $latestPayment->payment_type, // Will always be 'follow_up'
             'serviceEngineerName' => $serviceEngineerName ?? null,
             'pendingPaymentId' => !$hasPaid ? $latestPayment->id : null,
             'paymentHistory' => $paymentHistory

@@ -12,7 +12,7 @@ class CreatePatientsTable extends Migration
           
             $table->string('Auth_name');
             $table->string('name')->nullable();
-            $table->string('email')->unique();
+            $table->string('email');
             $table->string('password');
             $table->string('phone_number')->nullable();
             $table->rememberToken();
