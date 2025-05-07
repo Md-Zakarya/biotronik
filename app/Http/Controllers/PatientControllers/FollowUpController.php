@@ -354,8 +354,8 @@ class FollowUpController extends Controller
 
             // Check specifically for completed follow-up payments
             $hasPaidForFollowUp = $payments->where('payment_type', 'follow_up')
-                                           ->where('payment_status', 'completed') // Ensure payment is completed
-                                           ->isNotEmpty();
+                ->where('payment_status', 'completed') // Ensure payment is completed
+                ->isNotEmpty();
 
             // Count frequency of all payments by payment_type
             $paymentFrequency = $payments->groupBy('payment_type')
@@ -373,7 +373,7 @@ class FollowUpController extends Controller
                         'total_payments' => $payments->count(),
                         'breakdown' => $paymentFrequency,
                         // Set paidOrNot based on whether a completed follow-up payment exists
-                        'paidOrNot' => $hasPaidForFollowUp ? 1 : 0 
+                        'paidOrNot' => $hasPaidForFollowUp ? 1 : 0
                     ]
                 ]
             ], 200);
@@ -385,7 +385,7 @@ class FollowUpController extends Controller
             ], 500);
         }
     }
-    public function checkPaymentStatus(Request $request)
+    public function checkPaymentStatus1(Request $request)
     {
         $user = $request->user();
 
@@ -398,24 +398,25 @@ class FollowUpController extends Controller
 
         $patientId = $user->id;
 
-        // Get all payments ordered by most recent first
+        // Get all follow_up payments ordered by most recent first
         $payments = Payment::where('patient_id', $patientId)
+            ->where('payment_type', 'follow_up') // Filter for follow_up payments only
             ->orderBy('created_at', 'desc')
             ->get();
 
         if ($payments->isEmpty()) {
             return response()->json([
                 'paymentStatus' => 'payment_required',
-                'message' => 'No payment records found. Payment is required.',
+                'message' => 'No follow-up payment records found. Payment is required.',
                 'hasPaid' => false,
                 'paymentHistory' => []
             ], 200);
         }
 
-        // Get the most recent payment
+        // Get the most recent follow_up payment
         $latestPayment = $payments->first();
 
-        // Format the payment history
+        // Format the payment history (only follow_up payments)
         $paymentHistory = $payments->map(function ($payment) {
             return [
                 'id' => $payment->id,
@@ -436,7 +437,7 @@ class FollowUpController extends Controller
 
         if ($latestPayment->payment_status === 'completed') {
             $paymentStatus = 'paid';
-            $message = 'Payment has been completed successfully.';
+            $message = 'Follow-up payment has been completed successfully.';
             $hasPaid = true;
             $paymentBy = isset($latestPayment->payment_details['paid_by']) ? $latestPayment->payment_details['paid_by'] : 'patient';
 
@@ -448,7 +449,7 @@ class FollowUpController extends Controller
             }
         } else {
             $paymentStatus = 'pending';
-            $message = 'Payment is pending. Patient needs to complete payment.';
+            $message = 'Follow-up payment is pending. Patient needs to complete payment.';
             $hasPaid = false;
 
             // Get service engineer name from users table if available
@@ -466,11 +467,374 @@ class FollowUpController extends Controller
             'paymentBy' => $paymentBy ?? 'patient',
             'lastPaymentDate' => $latestPayment->created_at,
             'amount' => $latestPayment->amount,
-            'paymentType' => $latestPayment->payment_type,
+            'paymentType' => $latestPayment->payment_type, // Will always be 'follow_up'
             'serviceEngineerName' => $serviceEngineerName ?? null,
             'pendingPaymentId' => !$hasPaid ? $latestPayment->id : null,
             'paymentHistory' => $paymentHistory
         ], 200);
     }
+
+    public function checkPaymentStatus11(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json([
+                'paymentStatus' => 'unauthenticated',
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        $patientId = $user->id;
+
+        // Get all follow_up payments ordered by most recent first
+        $payments = Payment::where('patient_id', $patientId)
+            ->where('payment_type', 'follow_up')
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        if ($payments->isEmpty()) {
+            return response()->json([
+                'paymentStatus' => 'payment_required',
+                'message' => 'No follow-up payment records found. Payment is required.',
+                'hasPaid' => false,
+                'paymentHistory' => []
+            ], 200);
+        }
+
+        // Get the most recent follow_up payment
+        $latestPayment = $payments->first();
+
+        // Format the payment history
+        $paymentHistory = $payments->map(function ($payment) {
+            return [
+                'id' => $payment->id,
+                'amount' => $payment->amount,
+                'payment_date' => $payment->created_at,
+                'payment_status' => $payment->payment_status,
+                'payment_type' => $payment->payment_type,
+                'payment_by' => isset($payment->payment_details['paid_by']) ? $payment->payment_details['paid_by'] : 'patient',
+                'gst_number' => $payment->gst_number,
+                'pan_number' => $payment->pan_number
+            ];
+        });
+
+        // Initialize variables
+        $paymentStatus = 'unknown';
+        $message = '';
+        $hasPaid = false;
+        $needsNewPayment = false;
+
+        if ($latestPayment->payment_status === 'completed') {
+            // Check if there's a completed follow-up request using this payment
+            $completedFollowUp = FollowUpRequest::where('payment_id', $latestPayment->id)
+                ->where('status', FollowUpRequest::STATUS_COMPLETED)
+                ->first();
+
+            if ($completedFollowUp) {
+                // If there's a completed follow-up with this payment, user needs to pay again
+                $paymentStatus = 'payment_required_for_new_request';
+                $message = 'Your previous follow-up has been completed. Payment is required for a new follow-up request.';
+                $hasPaid = false;
+                $needsNewPayment = true;
+            } else {
+                // Check for active follow-ups with this payment
+                $activeFollowUp = FollowUpRequest::where('payment_id', $latestPayment->id)
+                    ->whereIn('status', [FollowUpRequest::STATUS_PENDING, FollowUpRequest::STATUS_APPROVED])
+                    ->first();
+
+                if ($activeFollowUp) {
+                    $paymentStatus = 'paid';
+                    $message = 'Follow-up payment has been completed successfully. You have an active follow-up request.';
+                    $hasPaid = true;
+                } else {
+                    $paymentStatus = 'paid';
+                    $message = 'Follow-up payment has been completed successfully. You can now create a follow-up request.';
+                    $hasPaid = true;
+                }
+            }
+        } else {
+            $paymentStatus = 'pending';
+            $message = 'Follow-up payment is pending. Patient needs to complete payment.';
+            $hasPaid = false;
+        }
+
+        // Get service engineer name if available
+        $serviceEngineerName = null;
+        if ($latestPayment->service_engineer_id) {
+            $serviceEngineer = \App\Models\User::find($latestPayment->service_engineer_id);
+            $serviceEngineerName = $serviceEngineer ? $serviceEngineer->name : null;
+        }
+
+        return response()->json([
+            'paymentStatus' => $paymentStatus,
+            'message' => $message,
+            'hasPaid' => $hasPaid,
+            'needsNewPayment' => $needsNewPayment,
+            'paymentBy' => $latestPayment->payment_details['paid_by'] ?? 'patient',
+            'lastPaymentDate' => $latestPayment->created_at,
+            'amount' => $latestPayment->amount,
+            'paymentType' => $latestPayment->payment_type,
+            'serviceEngineerName' => $serviceEngineerName,
+            'pendingPaymentId' => !$hasPaid ? $latestPayment->id : null,
+            'paymentHistory' => $paymentHistory
+        ], 200);
+    }
+
+
+    ///latest one
+    public function checkPaymentStatus111(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json([
+                'paymentStatus' => 'unauthenticated',
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        $patientId = $user->id;
+        $status = [
+            'canRaiseANewFollowUp' => null,
+            'followUpStatus' => null,
+            'message' => '',
+            'paymentId' => null,
+            'paymentAmount' => null,
+            'serviceEngineerName' => null
+        ];
+
+        // 1. Check for pending payment generated by service engineer
+        $pendingPayment = Payment::where('patient_id', $patientId)
+            ->where('payment_type', 'follow_up')
+            ->where('payment_status', 'pending')
+            ->whereNotNull('service_engineer_id')
+            ->latest()
+            ->first();
+
+        if ($pendingPayment) {
+            $status['canRaiseANewFollowUp'] = 'pending_payment_found';
+            $status['message'] = 'Pending payment found. Complete the payment to proceed.';
+            $status['paymentId'] = $pendingPayment->id;
+            $status['paymentAmount'] = $pendingPayment->amount;
+
+            // Get service engineer name
+            if ($pendingPayment->service_engineer_id) {
+                $serviceEngineer = \App\Models\User::find($pendingPayment->service_engineer_id);
+                $status['serviceEngineerName'] = $serviceEngineer ? $serviceEngineer->name : null;
+            }
+
+            return $this->generateResponse($status);
+        }
+
+        // 2. Check for existing follow-up request
+        $existingFollowUp = FollowUpRequest::where('patient_id', $patientId)
+            ->latest()
+            ->first();
+
+        if ($existingFollowUp) {
+            $status['canRaiseANewFollowUp'] = 'no_pending_payment_found';
+
+            if ($existingFollowUp->status === FollowUpRequest::STATUS_COMPLETED) {
+                $status['followUpStatus'] = 'completed_needs_new_payment';
+                $status['message'] = 'Previous follow-up completed. New payment required for next follow-up.';
+            } else {
+                $status['followUpStatus'] = $existingFollowUp->status;
+                $status['message'] = 'Active follow-up request exists with status: ' . $existingFollowUp->status;
+                if ($existingFollowUp->service_engineer_id) {
+                    $serviceEngineer = \App\Models\User::find($existingFollowUp->service_engineer_id);
+                    $status['serviceEngineerName'] = $serviceEngineer ? $serviceEngineer->name : null;
+                }
+            }
+
+            return $this->generateResponse($status);
+        }
+
+        // 3. Check latest completed payment without follow-up
+        $latestCompletedPayment = Payment::where('patient_id', $patientId)
+            ->where('payment_type', 'follow_up')
+            ->where('payment_status', 'completed')
+            ->latest()
+            ->first();
+
+        if ($latestCompletedPayment) {
+            // Check if this payment has any follow-up request
+            $hasFollowUp = FollowUpRequest::where('payment_id', $latestCompletedPayment->id)->exists();
+
+            if (!$hasFollowUp) {
+                $status['canRaiseANewFollowUp'] = 'payment_done_but_no_follow_raised';
+                $status['message'] = 'Payment completed. You can now raise a follow-up request.';
+                $status['paymentId'] = $latestCompletedPayment->id;
+                return $this->generateResponse($status);
+            }
+        }
+
+        // No payment or follow-up found
+        $status['canRaiseANewFollowUp'] = 'no_pending_or_done_payment_found';
+        $status['message'] = 'No active payment or follow-up request found. New payment required.';
+
+        return $this->generateResponse($status);
+    }
+    public function checkPaymentStatus(Request $request)
+    {
+        $user = $request->user();
+        \Log::info('Checking payment status for user', ['user_id' => $user?->id]);
+    
+        if (!$user) {
+            \Log::warning('Payment status check failed: User not authenticated');
+            return response()->json([
+                'paymentStatus' => 'unauthenticated',
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+    
+        $patientId = $user->id;
+        \Log::info('Processing payment status check', ['patient_id' => $patientId]);
+    
+        $status = [
+            'canRaiseANewFollowUp' => null,
+            'followUpStatus' => null,
+            'message' => '',
+            'paymentId' => null,
+            'paymentAmount' => null,
+            'serviceEngineerName' => null
+        ];
+    
+        // 1. Check for pending payment generated by service engineer
+        \Log::info('Checking for pending payment by service engineer');
+        $pendingPayment = Payment::where('patient_id', $patientId)
+            ->where('payment_type', 'follow_up')
+            ->where('payment_status', 'pending')
+            ->whereNotNull('service_engineer_id')
+            ->latest()
+            ->first();
+    
+        if ($pendingPayment) {
+            \Log::info('Pending payment found', [
+                'payment_id' => $pendingPayment->id,
+                'amount' => $pendingPayment->amount,
+                'service_engineer_id' => $pendingPayment->service_engineer_id
+            ]);
+    
+            $status['canRaiseANewFollowUp'] = 'pending_payment_found';
+            $status['message'] = 'Pending payment found. Complete the payment to proceed.';
+            $status['paymentId'] = $pendingPayment->id;
+            $status['paymentAmount'] = $pendingPayment->amount;
+    
+            // Get service engineer name
+            if ($pendingPayment->service_engineer_id) {
+                $serviceEngineer = \App\Models\User::find($pendingPayment->service_engineer_id);
+                $status['serviceEngineerName'] = $serviceEngineer ? $serviceEngineer->name : null;
+                \Log::info('Service engineer associated with payment', [
+                    'engineer_id' => $pendingPayment->service_engineer_id,
+                    'engineer_name' => $status['serviceEngineerName']
+                ]);
+            }
+    
+            return $this->generateResponse($status);
+        }
+    
+        // 2. Check for latest completed payment without follow-up - MOVED THIS CHECK UP
+        \Log::info('Checking for completed payment without follow-up');
+        $latestCompletedPayment = Payment::where('patient_id', $patientId)
+            ->where('payment_type', 'follow_up')
+            ->where('payment_status', 'completed')
+            ->latest()
+            ->first();
+    
+        if ($latestCompletedPayment) {
+            \Log::info('Found completed payment', ['payment_id' => $latestCompletedPayment->id]);
+    
+            // Check if this payment has any follow-up request
+            $hasFollowUp = FollowUpRequest::where('payment_id', $latestCompletedPayment->id)->exists();
+            \Log::info('Checking if payment has follow-up request', [
+                'payment_id' => $latestCompletedPayment->id,
+                'has_follow_up' => $hasFollowUp
+            ]);
+    
+            if (!$hasFollowUp) {
+                \Log::info('Payment has no follow-up request, patient can create one now');
+                $status['canRaiseANewFollowUp'] = 'payment_done_but_no_follow_raised';
+                $status['message'] = 'Payment completed. You can now raise a follow-up request.';
+                $status['paymentId'] = $latestCompletedPayment->id;
+                return $this->generateResponse($status);
+            }
+        }
+    
+        // 3. Check for existing follow-up request - MOVED THIS CHECK DOWN
+        \Log::info('Checking for existing follow-up request');
+        $existingFollowUp = FollowUpRequest::where('patient_id', $patientId)
+            ->latest()
+            ->first();
+    
+        if ($existingFollowUp) {
+            \Log::info('Existing follow-up request found', [
+                'follow_up_id' => $existingFollowUp->follow_up_id,
+                'status' => $existingFollowUp->status,
+                'service_engineer_id' => $existingFollowUp->service_engineer_id
+            ]);
+    
+            $status['canRaiseANewFollowUp'] = 'no_pending_payment_found';
+    
+            if ($existingFollowUp->status === FollowUpRequest::STATUS_COMPLETED) {
+                \Log::info('Follow-up is completed, needs new payment');
+                $status['followUpStatus'] = 'completed_needs_new_payment';
+                $status['message'] = 'Previous follow-up completed. New payment required for next follow-up.';
+            } else {
+                $status['followUpStatus'] = $existingFollowUp->status;
+                $status['message'] = 'Active follow-up request exists with status: ' . $existingFollowUp->status;
+    
+                if ($existingFollowUp->service_engineer_id) {
+                    $serviceEngineer = \App\Models\User::find($existingFollowUp->service_engineer_id);
+                    $status['serviceEngineerName'] = $serviceEngineer ? $serviceEngineer->name : null;
+                    \Log::info('Service engineer assigned to follow-up', [
+                        'engineer_id' => $existingFollowUp->service_engineer_id,
+                        'engineer_name' => $status['serviceEngineerName']
+                    ]);
+                }
+            }
+    
+            return $this->generateResponse($status);
+        }
+    
+        // No payment or follow-up found
+        \Log::info('No active payment or follow-up found, new payment required');
+        $status['canRaiseANewFollowUp'] = 'no_pending_or_done_payment_found';
+        $status['message'] = 'No active payment or follow-up request found. New payment required.';
+    
+        return $this->generateResponse($status);
+    }
+
+    private function generateResponse($status)
+    {
+        // Get payment history
+        $paymentHistory = Payment::where('patient_id', request()->user()->id)
+            ->where('payment_type', 'follow_up')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($payment) {
+                return [
+                    'id' => $payment->id,
+                    'amount' => $payment->amount,
+                    'payment_date' => $payment->created_at,
+                    'payment_status' => $payment->payment_status,
+                    'payment_type' => $payment->payment_type,
+                    'payment_by' => $payment->payment_details['paid_by'] ?? 'patient',
+                    'gst_number' => $payment->gst_number,
+                    'pan_number' => $payment->pan_number
+                ];
+            });
+
+        return response()->json([
+            'status' => $status['canRaiseANewFollowUp'],
+            'followUpStatus' => $status['followUpStatus'],
+            'message' => $status['message'],
+            'paymentId' => $status['paymentId'],
+            'paymentAmount' => $status['paymentAmount'],
+            'serviceEngineerName' => $status['serviceEngineerName'],
+            'paymentHistory' => $paymentHistory
+        ], 200);
+    }
+
 
 }

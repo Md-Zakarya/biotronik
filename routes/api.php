@@ -237,6 +237,16 @@ Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     //request ID flow
     Route::get('/admin/id-requests', [AdminIdRequestController::class, 'index']);
     Route::put('/admin/id-requests/{id}/status', [AdminIdRequestController::class, 'updateStatus']);
+
+
+
+    // reports section flow API endpoints
+    Route::get('/admin/reports/implants', [AdminController::class, 'getImplantReport']);
+    Route::get('/admin/reports/implants/export/csv', [AdminController::class, 'exportImplantReportCsv']);
+    Route::get('/admin/reports/implants/export/pdf', [AdminController::class, 'exportImplantReportPdf']);
+
+    
+
 });
 
 Route::middleware(['auth:sanctum', 'role:distributor'])->group(function () {
@@ -274,7 +284,7 @@ Route::middleware(['auth:sanctum', 'role:distributor'])->group(function () {
 
     Route::get('/admin/distributors/upgrade-implant/pending', [DisUpgradeImplantController::class, 'getPendingUpgrades']);
     Route::post('/admin/distributors/upgrade-implant/{id}/assign', [DisUpgradeImplantController::class, 'assignServiceEngineer']);
-    Route::get('/admin/distributors/upgrade-implant/{id}/details', [DisUpgradeImplantController::class, 'getPendingUpgradeDetails']);
+    Route::get('/admin/distributors/upgrade-implant/{id}', [DisUpgradeImplantController::class, 'getPendingUpgradeDetails']);
     
 
 
@@ -352,7 +362,7 @@ Route::middleware('auth:sanctum')->group(function () {
     
 
     Route::post('/patient/upgrade-implant-request', [PatientUpgradeController::class, 'requestUpgrade']);
-    Route::get('/patient/upgrade-implant/requests', [PatientUpgradeController::class, 'getUpgradeRequests']);
+    Route::get('/patient/upgrade-implant/status', [PatientUpgradeController::class, 'getUpgradeRequests']);
 
 
 

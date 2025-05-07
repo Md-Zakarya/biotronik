@@ -100,17 +100,14 @@ class UpgradeImplantController extends Controller
 
         return response()->json([
             'id' => $upgrade->id,
-            'patient' => [
                 'name' => $patient->name ?? null,
                 'date_of_birth' => $patient->date_of_birth ?? null,
                 'gender' => $patient->gender ?? null,
                 'email' => $patient->email ?? null,
                 'phone_number' => $patient->phone_number ?? null,
                 'patient_photo' => $patient->patient_photo
-                ? $s3Service->getFileUrl($patient->patient_photo)
-                : null,
-            ],
-            'upgrade_details' => [
+                    ? $s3Service->getFileUrl($patient->patient_photo)
+                    : null,          
                 'state' => $upgrade->state,
                 'hospital_name' => $upgrade->hospital_name,
                 'doctor_name' => $upgrade->doctor_name,
@@ -122,6 +119,7 @@ class UpgradeImplantController extends Controller
                 'old_ra_rv_lead_model' => $upgrade->old_ra_rv_lead_model,
                 'old_csp_catheter_brand' => $upgrade->old_csp_catheter_brand,
                 'old_csp_lead_model' => $upgrade->old_csp_lead_model,
+                'is_csp_implant' => !empty($upgrade->old_csp_catheter_brand),
                 // New implant fields (may be null for pending)
                 'new_implantation_date' => $upgrade->new_implantation_date,
                 'new_ipg_serial_number' => $upgrade->new_ipg_serial_number,
@@ -133,7 +131,6 @@ class UpgradeImplantController extends Controller
                 'new_csp_catheter_model' => $upgrade->new_csp_catheter_model,
                 'new_csp_lead_model' => $upgrade->new_csp_lead_model,
                 'new_csp_lead_serial' => $upgrade->new_csp_lead_serial,
-            ],
             'status' => $upgrade->status,
             'created_at' => $upgrade->created_at,
             'updated_at' => $upgrade->updated_at,

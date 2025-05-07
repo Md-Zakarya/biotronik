@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use App\Models\Patient;
 use App\Models\DeviceReplacement;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class AdminController extends Controller
 {
@@ -527,4 +528,531 @@ class AdminController extends Controller
             ], 500);
         }
     }
+
+
+    /**
+     * Generate a comprehensive report of all implants in the system
+     * 
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getImplantReport(Request $request)
+    {
+        try {
+            // Get all implants with related data
+            $implants = \App\Models\Implant::with([
+                'patient',
+                'user', // Sales/Technical person
+                'user.roles'
+            ])->get();
+
+            $reportData = [];
+
+            foreach ($implants as $implant) {
+                // Get the current date for year/quarter/month calculations
+                $implantationDate = $implant->implantation_date ?
+                    \Carbon\Carbon::parse($implant->implantation_date) :
+                    \Carbon\Carbon::now();
+
+                $year = $implantationDate->format('Y');
+                $quarter = 'Q' . ceil($implantationDate->format('n') / 3);
+                $month = $implantationDate->format('F');
+
+                // Get warranty type
+                $warrantyExtension = $implant->patient_id ?
+                    \App\Models\Payment::where('patient_id', $implant->patient_id)
+                        ->where('payment_type', 'warranty_extension')
+                        ->where('payment_status', 'completed')
+                        ->first() :
+                    null;
+
+                $warrantyType = $warrantyExtension ? 'Extended' : 'Standard';
+
+                // Get lead information from ra_rv_leads JSON field
+                $leads = [];
+                if ($implant->ra_rv_leads && (is_array($implant->ra_rv_leads) || is_string($implant->ra_rv_leads))) {
+                    // Handle if the data is stored as a JSON string
+                    $leadData = is_string($implant->ra_rv_leads) ?
+                        json_decode($implant->ra_rv_leads, true) :
+                        $implant->ra_rv_leads;
+
+                    if (is_array($leadData)) {
+                        $leadCount = 1;
+                        foreach ($leadData as $lead) {
+                            if ($leadCount <= 3) { // We only handle up to 3 leads as per the report format
+                                // Extract available data
+                                $modelName = $lead['model'] ?? 'Unknown Model';
+                                $serial = $lead['serial'] ?? 'Unknown Serial';
+
+                                // If model_number doesn't exist, try to look it up
+                                $modelNumber = $lead['model_number'] ?? null;
+
+                                // If model_number isn't provided but we need it, look it up
+                                if (!$modelNumber && $modelName) {
+                                    // Primary lookup in LeadModel
+                                    $modelInfo = \App\Models\LeadModel::where('model_name', $modelName)->first();
+                                    if ($modelInfo) {
+                                        $modelNumber = $modelInfo->model_number;
+                                    } else {
+                                        // Fallback to a default format or logging
+                                        \Log::warning("No model number found for lead model: {$modelName}");
+                                        $modelNumber = "UNKNOWN-" . substr(md5($modelName), 0, 8); // Generate a pseudo model number
+                                    }
+                                }
+
+                                $leads[$leadCount] = [
+                                    'model' => $modelName,
+                                    'model_number' => $modelNumber ?: 'No Model Number',
+                                    'serial' => $serial
+                                ];
+                                $leadCount++;
+                            }
+                        }
+                    }
+                }
+
+                // Get patient information
+                $patient = $implant->patient;
+
+                // Format report row with default values for nulls
+                $reportRow = [
+                    'Year' => $year ?: 'N/A',
+                    'Quarter' => $quarter ?: 'N/A',
+                    'Month' => $month ?: 'N/A',
+                    'Implant_ID' => $implant->id ?: 'N/A',
+                    'Implant_Type' => $implant->device_name ?: 'Not Specified',
+                    'Status_of_Implant' => $implant->active ? 'Active' : 'Inactive',
+                    'Date_of_Implant' => $implant->implantation_date ?: 'Not Recorded',
+                    'Zone' => 'Not Specified', // Assuming zone is not currently stored
+                    'State' => $implant->hospital_state ?: 'Not Specified',
+                    'City' => $patient && $patient->city ? $patient->city : 'Not Specified',
+                    'Zonal_Regional_Manager' => 'Not Assigned', // Would need to be added if available
+                    'Distributor_Code' => 'Not Assigned', // Would need to be added if available
+                    'Distributor_Name' => $implant->channel_partner ?: 'Not Specified',
+                    'Sales_Person_Id' => $implant->user_id ?: 'Not Assigned',
+                    'Sales_Person_Name' => $implant->user ? $implant->user->name : 'Not Assigned',
+                    'Technical_Person_Id' => $implant->user_id ?: 'Not Assigned', // Assuming same as sales for now
+                    'Technical_Person_Name' => $implant->user ? $implant->user->name : 'Not Assigned',
+                    'Hospital' => $implant->hospital_name ?: 'Not Specified',
+                    'Physician_ID' => 'Not Recorded', // Would need to be added if available
+                    'Physician_Name' => $implant->doctor_name ?: 'Not Specified',
+                    'Warranty_Type' => $warrantyType,
+                    'Therapy' => $implant->therapy_name ?: 'Not Specified',
+                    'Device_Type' => $implant->device_name ?: 'Not Specified',
+                    'IPG_Model_Number' => $implant->ipg_model_number ?: 'Not Specified',
+                    'IPG_Model_Name' => $implant->ipg_model ?: 'Not Specified',
+                    'IPG_Serial_Number' => $implant->ipg_serial_number ?: 'Not Specified',
+
+                    // Lead 1
+                    'Lead_1_Model_Name' => isset($leads[1]) ? $leads[1]['model'] : 'Not Applicable',
+                    'Lead_1_Model_Number' => isset($leads[1]) ? $leads[1]['model_number'] : 'Not Applicable',
+                    'Lead_1_Serial_Number' => isset($leads[1]) ? $leads[1]['serial'] : 'Not Applicable',
+
+                    // Lead 2
+                    'Lead_2_Model_Name' => isset($leads[2]) ? $leads[2]['model'] : 'Not Applicable',
+                    'Lead_2_Model_Number' => isset($leads[2]) ? $leads[2]['model_number'] : 'Not Applicable',
+                    'Lead_2_Serial_Number' => isset($leads[2]) ? $leads[2]['serial'] : 'Not Applicable',
+
+                    // Lead 3
+                    'Lead_3_Model_Name' => isset($leads[3]) ? $leads[3]['model'] : 'Not Applicable',
+                    'Lead_3_Model_Number' => isset($leads[3]) ? $leads[3]['model_number'] : 'Not Applicable',
+                    'Lead_3_Serial_Number' => isset($leads[3]) ? $leads[3]['serial'] : 'Not Applicable',
+
+                    // CSP and additional information
+                    'CSP' => $implant->is_csp_implant ? 'Yes' : 'No',
+                    'CSP_Cathetre' => $implant->csp_catheter_model ?: 'Not Applicable',
+                    'Extra_Lead' => $implant->has_extra_lead ? 'Yes' : 'No',
+                    'CSP_Lead_Model_Name' => $implant->csp_lead_model ?: 'Not Applicable',
+                    'CSP_Lead_Model_Number' => 'Not Recorded', // If available in your system
+                    'CSP_Lead_Serial_Number' => $implant->csp_lead_serial ?: 'Not Applicable',
+                    'Number_of_Unit' => 1, // Assuming 1 unit per record
+
+                    // Patient information
+                    'Patient_ID' => $patient ? $patient->id : 'Not Assigned',
+                    'Patient_Name' => $patient ? $patient->name : 'Not Assigned',
+                    'Patient_Email_ID' => $patient ? ($patient->email ?: 'No Email') : 'Not Assigned',
+                    'Patient_Phone' => $patient ? ($patient->phone_number ?: 'No Phone') : 'Not Assigned'
+                ];
+
+                $reportData[] = $reportRow;
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $reportData,
+                'count' => count($reportData)
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Error generating implant report: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate implant report',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    /**
+     * Export implant report as CSV
+     * 
+     * @param Request $request
+     * @return \Symfony\Component\HttpFoundation\StreamedResponse
+     */
+    public function exportImplantReportCsv(Request $request)
+    {
+        try {
+            $implants = \App\Models\Implant::with([
+                'patient',
+                'user',
+                'user.roles'
+            ])->get();
+
+            $filename = 'implant_report_' . date('Y-m-d') . '.csv';
+
+            return response()->streamDownload(function () use ($implants) {
+                // Open output stream
+                $handle = fopen('php://output', 'w');
+
+                // Add UTF-8 BOM to ensure Excel opens the file with proper encoding
+                fprintf($handle, chr(0xEF) . chr(0xBB) . chr(0xBF));
+
+                // Headers
+                $headers = [
+                    'Year',
+                    'Quarter',
+                    'Month',
+                    'Implant ID',
+                    'Implant Type',
+                    'Status of Implant',
+                    'Date of Implant',
+                    'Zone',
+                    'State',
+                    'City',
+                    'Zonal/Regional Manager',
+                    'Distributor Code',
+                    'Distributor Name',
+                    'Sales Person Id',
+                    'Sales Person Name',
+                    'Technical Person Id',
+                    'Technical Person Name',
+                    'Hospital',
+                    'Physician ID',
+                    'Physician Name',
+                    'Warranty Type',
+                    'Therapy',
+                    'Device Type',
+                    'IPG Model Number',
+                    'IPG Model Name',
+                    'IPG Serial Number',
+                    'Lead 1 Model Name',
+                    'Lead 1 Model Number',
+                    'Lead 1 Serial Number',
+                    'Lead 2 Model Name',
+                    'Lead 2 Model Number',
+                    'Lead 2 Serial Number',
+                    'Lead 3 Model Name',
+                    'Lead 3 Model Number',
+                    'Lead 3 Serial Number',
+                    'CSP',
+                    'CSP Cathetre',
+                    'Extra Lead',
+                    'CSP Lead Model Name',
+                    'CSP Lead Model Number',
+                    'CSP Lead Serial Number',
+                    'Number of Unit',
+                    'Patient ID',
+                    'Patient Name',
+                    'Patient Email ID',
+                    'Patient Phone'
+                ];
+
+                fputcsv($handle, $headers);
+
+                // Process and write data rows
+                foreach ($implants as $implant) {
+                    // Same logic as in getImplantReport to process the data
+                    $implantationDate = $implant->implantation_date ?
+                        \Carbon\Carbon::parse($implant->implantation_date) :
+                        \Carbon\Carbon::now();
+
+                    $year = $implantationDate->format('Y');
+                    $quarter = 'Q' . ceil($implantationDate->format('n') / 3);
+                    $month = $implantationDate->format('F');
+
+                    $warrantyExtension = $implant->patient_id ?
+                        \App\Models\Payment::where('patient_id', $implant->patient_id)
+                            ->where('payment_type', 'warranty_extension')
+                            ->where('payment_status', 'completed')
+                            ->first() :
+                        null;
+
+                    $warrantyType = $warrantyExtension ? 'Extended' : 'Standard';
+
+                    // Process leads
+                    $leads = [];
+                    if ($implant->ra_rv_leads && (is_array($implant->ra_rv_leads) || is_string($implant->ra_rv_leads))) {
+                        $leadData = is_string($implant->ra_rv_leads) ?
+                            json_decode($implant->ra_rv_leads, true) :
+                            $implant->ra_rv_leads;
+
+                        if (is_array($leadData)) {
+                            $leadCount = 1;
+                            foreach ($leadData as $lead) {
+                                if ($leadCount <= 3) {
+                                    $modelName = $lead['model'] ?? 'Unknown Model';
+                                    $serial = $lead['serial'] ?? 'Unknown Serial';
+                                    $modelNumber = $lead['model_number'] ?? null;
+
+                                    if (!$modelNumber && $modelName) {
+                                        $modelInfo = \App\Models\LeadModel::where('model_name', $modelName)->first();
+                                        if ($modelInfo) {
+                                            $modelNumber = $modelInfo->model_number;
+                                        } else {
+                                            $modelNumber = "UNKNOWN-" . substr(md5($modelName), 0, 8);
+                                        }
+                                    }
+
+                                    $leads[$leadCount] = [
+                                        'model' => $modelName,
+                                        'model_number' => $modelNumber ?: 'No Model Number',
+                                        'serial' => $serial
+                                    ];
+                                    $leadCount++;
+                                }
+                            }
+                        }
+                    }
+
+                    $patient = $implant->patient;
+
+                    // Create row data
+                    $row = [
+                        $year ?: 'N/A',
+                        $quarter ?: 'N/A',
+                        $month ?: 'N/A',
+                        $implant->id ?: 'N/A',
+                        $implant->device_name ?: 'Not Specified',
+                        $implant->active ? 'Active' : 'Inactive',
+                        $implant->implantation_date ?: 'Not Recorded',
+                        'Not Specified', // Zone
+                        $implant->hospital_state ?: 'Not Specified',
+                        $patient && $patient->city ? $patient->city : 'Not Specified',
+                        'Not Assigned', // Zonal/Regional Manager
+                        'Not Assigned', // Distributor Code
+                        $implant->channel_partner ?: 'Not Specified',
+                        $implant->user_id ?: 'Not Assigned',
+                        $implant->user ? $implant->user->name : 'Not Assigned',
+                        $implant->user_id ?: 'Not Assigned', // Technical Person ID
+                        $implant->user ? $implant->user->name : 'Not Assigned',
+                        $implant->hospital_name ?: 'Not Specified',
+                        'Not Recorded', // Physician ID
+                        $implant->doctor_name ?: 'Not Specified',
+                        $warrantyType,
+                        $implant->therapy_name ?: 'Not Specified',
+                        $implant->device_name ?: 'Not Specified',
+                        $implant->ipg_model_number ?: 'Not Specified',
+                        $implant->ipg_model ?: 'Not Specified',
+                        $implant->ipg_serial_number ?: 'Not Specified',
+                        isset($leads[1]) ? $leads[1]['model'] : 'Not Applicable',
+                        isset($leads[1]) ? $leads[1]['model_number'] : 'Not Applicable',
+                        isset($leads[1]) ? $leads[1]['serial'] : 'Not Applicable',
+                        isset($leads[2]) ? $leads[2]['model'] : 'Not Applicable',
+                        isset($leads[2]) ? $leads[2]['model_number'] : 'Not Applicable',
+                        isset($leads[2]) ? $leads[2]['serial'] : 'Not Applicable',
+                        isset($leads[3]) ? $leads[3]['model'] : 'Not Applicable',
+                        isset($leads[3]) ? $leads[3]['model_number'] : 'Not Applicable',
+                        isset($leads[3]) ? $leads[3]['serial'] : 'Not Applicable',
+                        $implant->is_csp_implant ? 'Yes' : 'No',
+                        $implant->csp_catheter_model ?: 'Not Applicable',
+                        $implant->has_extra_lead ? 'Yes' : 'No',
+                        $implant->csp_lead_model ?: 'Not Applicable',
+                        'Not Recorded', // CSP Lead Model Number
+                        $implant->csp_lead_serial ?: 'Not Applicable',
+                        1, // Number of Unit
+                        $patient ? $patient->id : 'Not Assigned',
+                        $patient ? $patient->name : 'Not Assigned',
+                        $patient ? ($patient->email ?: 'No Email') : 'Not Assigned',
+                        $patient ? ($patient->phone_number ?: 'No Phone') : 'Not Assigned'
+                    ];
+
+                    fputcsv($handle, $row);
+                }
+
+                fclose($handle);
+            }, $filename, [
+                'Content-Type' => 'text/csv',
+                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error generating CSV implant report: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate CSV implant report',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Export implant report as PDF
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\Response
+     */
+    public function exportImplantReportPdf(Request $request)
+    {
+        try {
+            // Get all implants with related data
+            $implants = \App\Models\Implant::with([
+                'patient',
+                'user',
+                'user.roles'
+            ])->get();
+
+            $reportData = [];
+
+            // Process each implant and build the report data the same way as in getImplantReport
+            foreach ($implants as $implant) {
+                // All the same data processing as in getImplantReport method...
+                $implantationDate = $implant->implantation_date ?
+                    \Carbon\Carbon::parse($implant->implantation_date) :
+                    \Carbon\Carbon::now();
+
+                $year = $implantationDate->format('Y');
+                $quarter = 'Q' . ceil($implantationDate->format('n') / 3);
+                $month = $implantationDate->format('F');
+
+                $warrantyExtension = $implant->patient_id ?
+                    \App\Models\Payment::where('patient_id', $implant->patient_id)
+                        ->where('payment_type', 'warranty_extension')
+                        ->where('payment_status', 'completed')
+                        ->first() :
+                    null;
+
+                $warrantyType = $warrantyExtension ? 'Extended' : 'Standard';
+
+                // Process leads...
+                $leads = [];
+                if ($implant->ra_rv_leads && (is_array($implant->ra_rv_leads) || is_string($implant->ra_rv_leads))) {
+                    $leadData = is_string($implant->ra_rv_leads) ?
+                        json_decode($implant->ra_rv_leads, true) :
+                        $implant->ra_rv_leads;
+
+                    if (is_array($leadData)) {
+                        $leadCount = 1;
+                        foreach ($leadData as $lead) {
+                            if ($leadCount <= 3) {
+                                $modelName = $lead['model'] ?? 'Unknown Model';
+                                $serial = $lead['serial'] ?? 'Unknown Serial';
+                                $modelNumber = $lead['model_number'] ?? null;
+
+                                if (!$modelNumber && $modelName) {
+                                    $modelInfo = \App\Models\LeadModel::where('model_name', $modelName)->first();
+                                    if ($modelInfo) {
+                                        $modelNumber = $modelInfo->model_number;
+                                    } else {
+                                        $modelNumber = "UNKNOWN-" . substr(md5($modelName), 0, 8);
+                                    }
+                                }
+
+                                $leads[$leadCount] = [
+                                    'model' => $modelName,
+                                    'model_number' => $modelNumber ?: 'No Model Number',
+                                    'serial' => $serial
+                                ];
+                                $leadCount++;
+                            }
+                        }
+                    }
+                }
+
+                $patient = $implant->patient;
+
+                // Build report row
+                $reportRow = [
+                    'Year' => $year ?: 'N/A',
+                    'Quarter' => $quarter ?: 'N/A',
+                    'Month' => $month ?: 'N/A',
+                    'Implant_ID' => $implant->id ?: 'N/A',
+                    'Implant_Type' => $implant->device_name ?: 'Not Specified',
+                    'Status_of_Implant' => $implant->active ? 'Active' : 'Inactive',
+                    'Date_of_Implant' => $implant->implantation_date ?: 'Not Recorded',
+                    'Zone' => 'Not Specified',
+                    'State' => $implant->hospital_state ?: 'Not Specified',
+                    'City' => $patient && $patient->city ? $patient->city : 'Not Specified',
+                    'Zonal_Regional_Manager' => 'Not Assigned',
+                    'Distributor_Code' => 'Not Assigned',
+                    'Distributor_Name' => $implant->channel_partner ?: 'Not Specified',
+                    'Sales_Person_Id' => $implant->user_id ?: 'Not Assigned',
+                    'Sales_Person_Name' => $implant->user ? $implant->user->name : 'Not Assigned',
+                    'Technical_Person_Id' => $implant->user_id ?: 'Not Assigned',
+                    'Technical_Person_Name' => $implant->user ? $implant->user->name : 'Not Assigned',
+                    'Hospital' => $implant->hospital_name ?: 'Not Specified',
+                    'Physician_ID' => 'Not Recorded',
+                    'Physician_Name' => $implant->doctor_name ?: 'Not Specified',
+                    'Warranty_Type' => $warrantyType,
+                    'Therapy' => $implant->therapy_name ?: 'Not Specified',
+                    'Device_Type' => $implant->device_name ?: 'Not Specified',
+                    'IPG_Model_Number' => $implant->ipg_model_number ?: 'Not Specified',
+                    'IPG_Model_Name' => $implant->ipg_model ?: 'Not Specified',
+                    'IPG_Serial_Number' => $implant->ipg_serial_number ?: 'Not Specified',
+
+                    // Lead data
+                    'Lead_1_Model_Name' => isset($leads[1]) ? $leads[1]['model'] : 'Not Applicable',
+                    'Lead_1_Model_Number' => isset($leads[1]) ? $leads[1]['model_number'] : 'Not Applicable',
+                    'Lead_1_Serial_Number' => isset($leads[1]) ? $leads[1]['serial'] : 'Not Applicable',
+                    'Lead_2_Model_Name' => isset($leads[2]) ? $leads[2]['model'] : 'Not Applicable',
+                    'Lead_2_Model_Number' => isset($leads[2]) ? $leads[2]['model_number'] : 'Not Applicable',
+                    'Lead_2_Serial_Number' => isset($leads[2]) ? $leads[2]['serial'] : 'Not Applicable',
+                    'Lead_3_Model_Name' => isset($leads[3]) ? $leads[3]['model'] : 'Not Applicable',
+                    'Lead_3_Model_Number' => isset($leads[3]) ? $leads[3]['model_number'] : 'Not Applicable',
+                    'Lead_3_Serial_Number' => isset($leads[3]) ? $leads[3]['serial'] : 'Not Applicable',
+
+                    // CSP data
+                    'CSP' => $implant->is_csp_implant ? 'Yes' : 'No',
+                    'CSP_Cathetre' => $implant->csp_catheter_model ?: 'Not Applicable',
+                    'Extra_Lead' => $implant->has_extra_lead ? 'Yes' : 'No',
+                    'CSP_Lead_Model_Name' => $implant->csp_lead_model ?: 'Not Applicable',
+                    'CSP_Lead_Model_Number' => 'Not Recorded',
+                    'CSP_Lead_Serial_Number' => $implant->csp_lead_serial ?: 'Not Applicable',
+                    'Number_of_Unit' => 1,
+
+                    // Patient data
+                    'Patient_ID' => $patient ? $patient->id : 'Not Assigned',
+                    'Patient_Name' => $patient ? $patient->name : 'Not Assigned',
+                    'Patient_Email_ID' => $patient ? ($patient->email ?: 'No Email') : 'Not Assigned',
+                    'Patient_Phone' => $patient ? ($patient->phone_number ?: 'No Phone') : 'Not Assigned'
+                ];
+
+                $reportData[] = $reportRow;
+            }
+
+            // Generate PDF using DomPDF
+            $pdf = PDF::loadView('admin.reports.implant_report_pdf', [
+                'reportData' => $reportData,
+                'generatedAt' => now()->format('Y-m-d H:i:s')
+            ]);
+
+            // Set PDF options
+            $pdf->setPaper('a3', 'landscape'); // Use A3 size in landscape orientation
+
+            return $pdf->download('implant_report_' . date('Y-m-d') . '.pdf');
+        } catch (\Exception $e) {
+            \Log::error('Error generating PDF implant report: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to generate PDF implant report',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 }
