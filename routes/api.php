@@ -352,7 +352,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('patient/register-backup-service', [BackupServiceController::class, 'store']);
     Route::get('/patient/backup-service/status', [BackupServiceController::class, 'getBackupServiceStatus']);
     Route::post('/patient/backup-service/cancel', [BackupServiceController::class, 'cancelBackupService']);
-    Route::get('/Patient/current-implant', [PatientImplantController::class, 'getCurrentImplant']);
+    Route::get('/patient/current-implant', [PatientImplantController::class, 'getCurrentImplant']);
 
 
     //ID Request Routes patient section

@@ -3052,6 +3052,34 @@ class PatientImplantController extends Controller
                 $warrantyType = 'extended';
             }
 
+            // $activeImplantData = [
+            //     'id' => $activeImplant->id,
+            //     'ipg_serial_number' => $activeImplant->ipg_serial_number,
+            //     'ipg_model' => $activeImplant->ipg_model,
+            //     'ipg_model_number' => $activeImplant->ipg_model_number,
+            //     'implantation_date' => $activeImplant->implantation_date,
+            //     'hospital_name' => $activeImplant->hospital_name,
+            //     'hospital_state' => $activeImplant->hospital_state,
+            //     'doctor_name' => $activeImplant->doctor_name,
+            //     'therapy_name' => $activeImplant->therapy_name,
+            //     'device_name' => $activeImplant->device_name,
+            //     'warranty_status' => [
+            //         'expired_at' => $activeImplant->warranty_expired_at,
+            //         'is_active' => now()->lt($activeImplant->warranty_expired_at),
+            //         'type' => $warrantyType
+            //     ],
+            //     'lead_details' => [
+            //         'ra_rv_leads' => $activeImplant->ra_rv_leads,
+            //         'has_ra_rv_lead' => $activeImplant->has_ra_rv_lead,
+            //         'has_extra_lead' => $activeImplant->has_extra_lead,
+            //         'csp_lead_model' => $activeImplant->csp_lead_model,
+            //         'csp_catheter_model' => $activeImplant->csp_catheter_model,
+            //         'csp_lead_serial' => $activeImplant->csp_lead_serial,
+            //     ]
+            // ];
+
+
+
             $activeImplantData = [
                 'id' => $activeImplant->id,
                 'ipg_serial_number' => $activeImplant->ipg_serial_number,
@@ -3065,7 +3093,7 @@ class PatientImplantController extends Controller
                 'device_name' => $activeImplant->device_name,
                 'warranty_status' => [
                     'expired_at' => $activeImplant->warranty_expired_at,
-                    'is_active' => now()->lt($activeImplant->warranty_expired_at),
+                    'is_active' => $activeImplant->warranty_expired_at ? now()->lt($activeImplant->warranty_expired_at) : false,
                     'type' => $warrantyType
                 ],
                 'lead_details' => [
@@ -3093,7 +3121,8 @@ class PatientImplantController extends Controller
                     'device_name' => $implant->device_name,
                     'warranty_status' => [
                         'expired_at' => $implant->warranty_expired_at,
-                        'is_active' => now()->lt($implant->warranty_expired_at),
+                        // 'is_active' => now()->lt($implant->warranty_expired_at),
+                        'is_active' => $implant->warranty_expired_at ? now()->lt($implant->warranty_expired_at) : false,
                     ],
                     'lead_details' => [
                         'ra_rv_leads' => $implant->ra_rv_leads,

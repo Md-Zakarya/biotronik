@@ -96,6 +96,9 @@ class UpgradeImplantController extends Controller
             Implant::where('patient_id', $patientId)
                 ->update(['active' => false]);
 
+
+                
+
             // 3. Create new implant record (active)
             $newSecretKey = Str::random(16);
             $newImplant = Implant::create([
