@@ -34,7 +34,7 @@ class UpgradeImplantController extends Controller
         $engineer = $request->user();
 
         $validated = $request->validate([
-            'new_implantation_date' => 'required|date|before_or_equal:today',
+            'new_implantation_date' => 'required|date|after:today',
             'new_ipg_serial_number' => [
                 'required',
                 'string',
