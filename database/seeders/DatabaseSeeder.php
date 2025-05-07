@@ -30,6 +30,8 @@ class DatabaseSeeder extends Seeder
             DeviceTypeSeeder::class,
             IpgModelSeeder::class,
             LeadModelSeeder::class,
+            IpgInventorySeeder::class,
+            LeadInventorySeeder::class,
         ]);
     }
 }

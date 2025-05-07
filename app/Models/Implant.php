@@ -71,4 +71,8 @@ class Implant extends Model
    {
     return $this->hasOne(IpgDevice::class);
    }
+   public function user()
+{
+    return $this->belongsTo(User::class, 'user_id');
+}
 }

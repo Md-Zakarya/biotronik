@@ -10,41 +10,58 @@ use App\Models\PendingImplant;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Carbon\Carbon;
+use App\Services\S3StorageService;
+use App\Models\BackupService;
 
 class DistController extends Controller
 {
-    public function getDashboardCounts()
+
+    protected $s3Service;
+
+    public function __construct(S3StorageService $s3Service)
     {
-        try {
-            // Get pending replacement requests count
-            $pendingReplacementsCount = DeviceReplacement::where('status', 'approved')
-                ->where('service_completed', false)
-                ->whereNull('new_ipg_serial_number')
-                ->count();
-
-            // Get pending follow-up requests
-            $pendingFollowUpsCount = FollowUpRequest::where('status', 'pending')->count();
-
-            // Total actionables
-            $totalActionables = $pendingReplacementsCount + $pendingFollowUpsCount;
-
-            return response()->json([
-                'status' => 'success',
-                'data' => [
-                    'total_actionables' => $totalActionables,
-                    'pending_replacements' => $pendingReplacementsCount,
-                    'pending_follow_ups' => $pendingFollowUpsCount
-                ]
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Error fetching dashboard counts',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        $this->s3Service = $s3Service;
     }
 
+    public function getDashboardCounts()
+{
+    try {
+        // Get pending replacement requests count
+        $pendingReplacementsCount = DeviceReplacement::where('status', 'approved')
+            ->where('service_completed', false)
+            ->whereNull('new_ipg_serial_number')
+            ->count();
+
+        // Get pending follow-up requests
+        $pendingFollowUpsCount = FollowUpRequest::where('status', 'pending')->count();
+
+        // Get pending backup service requests
+        $pendingBackupServicesCount = BackupService::where('status', 'pending')->count();
+
+        // Get pending upgrade-implant requests
+        $pendingUpgradeImplantCount = \App\Models\DeviceUpgrade::where('status', 'pending')->count();
+
+        // Total actionables
+        $totalActionables = $pendingReplacementsCount + $pendingFollowUpsCount + $pendingBackupServicesCount + $pendingUpgradeImplantCount;
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'total_actionables' => $totalActionables,
+                'pending_replacements' => $pendingReplacementsCount,
+                'pending_follow_ups' => $pendingFollowUpsCount,
+                'pending_backup_services' => $pendingBackupServicesCount,
+                'pending_upgrade_implants' => $pendingUpgradeImplantCount
+            ]
+        ], 200);
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Error fetching dashboard counts',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
 
 
     public function getPendingImplantDetails($id)
@@ -64,6 +81,9 @@ class DistController extends Controller
                 'id' => $pendingImplant->id,
                 'patient' => [
                     'id' => $pendingImplant->patient->id,
+                    'patient_photo' => $pendingImplant->patient->patient_photo
+                        ? $this->s3Service->getFileUrl($pendingImplant->patient->patient_photo)
+                        : null,
                     'name' => $pendingImplant->patient->name,
                     'date_of_birth' => $pendingImplant->patient->date_of_birth,
                     'gender' => $pendingImplant->patient->gender,
@@ -95,9 +115,15 @@ class DistController extends Controller
                     'lead_brand' => $pendingImplant->lead_brand,
                 ],
                 'documents' => [
-                    'patient_id_card' => $pendingImplant->patient_id_card ? \Storage::disk('s3')->url($pendingImplant->patient_id_card) : null,
-                    'warranty_card' => $pendingImplant->warranty_card ? \Storage::disk('s3')->url($pendingImplant->warranty_card) : null,
-                    'interrogation_report' => $pendingImplant->interrogation_report ? \Storage::disk('s3')->url($pendingImplant->interrogation_report) : null,
+                    'patient_id_card' => $pendingImplant->patient_id_card
+                        ? $this->s3Service->getFileUrl($pendingImplant->patient_id_card)
+                        : null,
+                    'warranty_card' => $pendingImplant->warranty_card
+                        ? $this->s3Service->getFileUrl($pendingImplant->warranty_card)
+                        : null,
+                    'interrogation_report' => $pendingImplant->interrogation_report
+                        ? $this->s3Service->getFileUrl($pendingImplant->interrogation_report)
+                        : null,
                 ],
                 'status' => $pendingImplant->status,
             ];
@@ -229,6 +255,8 @@ class DistController extends Controller
             ], 500);
         }
     }
+
+    //does not have backup and has been tested to work well. 
     public function listAllPendingItems(Request $request)
     {
         try {
@@ -298,6 +326,8 @@ class DistController extends Controller
             ], 500);
         }
     }
+
+
     public function listAllPendingRequests(Request $request)
     {
         try {
@@ -453,6 +483,7 @@ class DistController extends Controller
             }
 
             $details = [
+                'patient_photo' => $replacement->patient->patient_photo ? $this->s3Service->getFileUrl($replacement->patient->patient_photo) : null,
                 'name' => $replacement->patient->name,
                 'date_of_birth' => $replacement->patient->date_of_birth,
                 'gender' => $replacement->patient->gender,
@@ -464,10 +495,12 @@ class DistController extends Controller
                 'channel_partner' => $replacement->channel_partner,       // Changed from implant->channel_partner
                 'reason_for_replacement' => $replacement->replacement_reason,
                 'planned_replacement_schedule' => Carbon::parse($replacement->planned_replacement_date)->format('Y-m-d H:i:s'),
-                'interrogation_report' => $replacement->interrogation_report_path,
-                'physician_report' => $replacement->prescription_path,
+                // 'interrogation_report' => $replacement->interrogation_report_path,
+                // 'physician_report' => $replacement->prescription_path,
                 'ipg_model_number' => $replacement->implant->ipg_model_number,
-                'ipg_model_name' => $replacement->implant->ipg_model
+                'ipg_model_name' => $replacement->implant->ipg_model,
+                'interrogation_report_url' => $this->s3Service->getFileUrl($replacement->interrogation_report_path),
+                'physician_report_url' => $this->s3Service->getFileUrl($replacement->prescription_path),
             ];
 
             return response()->json([
@@ -567,6 +600,92 @@ class DistController extends Controller
         }
     }
 
+    //commneted on 03-05-2025 after adding pending upgrades in it
+    public function getAllActionables1()
+    {
+        try {
+            // Get pending replacement requests with timestamps
+            $replacementRequests = DeviceReplacement::with(['patient', 'implant', 'serviceEngineer'])
+                ->where('status', DeviceReplacement::STATUS_APPROVED)
+                ->whereNull('new_ipg_serial_number')
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'replacement',
+                        'patient_name' => $request->patient->name,
+                        'hospital_name' => $request->hospital_name,
+                        'ticket_type' => $request->is_warranty_claim ? 'Warranty Replacement' : 'Paid Replacement',
+                        'status' => 'Pending',
+                        'service_engineer' => $request->serviceEngineer ? $request->serviceEngineer->name : null,
+                        'created_at' => $request->created_at->toDateTimeString()
+                    ];
+                });
+
+            // Get pending follow-up requests with timestamps
+            $followUpRequests = FollowUpRequest::with(['patient'])
+                ->where('status', FollowUpRequest::STATUS_PENDING)
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'follow-up',
+                        'patient_name' => $request->patient->name,
+                        'hospital_name' => $request->hospital_name,
+                        'ticket_type' => 'Follow-up Service',
+                        'status' => 'Pending',
+                        'service_engineer' => null,
+                        'created_at' => $request->created_at->toDateTimeString()
+                    ];
+                });
+
+            // Get pending backup service requests
+            $backupRequests = BackupService::with(['patient', 'serviceEngineer'])
+                ->where('status', 'pending')
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'backup',
+                        'patient_name' => $request->patient->name,
+                        'hospital_name' => $request->hospital_name,
+                        'ticket_type' => 'Backup Service',
+                        'status' => 'Pending',
+                        'service_engineer' => $request->serviceEngineer ? $request->serviceEngineer->name : null,
+                        'created_at' => $request->created_at->toDateTimeString()
+                    ];
+                });
+
+            // Convert all collections to arrays and merge them
+            $allRequests = array_merge(
+                $replacementRequests->toArray(),
+                $followUpRequests->toArray(),
+                $backupRequests->toArray()
+            );
+
+            // Sort the merged array by created_at
+            usort($allRequests, function ($a, $b) {
+                return strtotime($b['created_at']) - strtotime($a['created_at']);
+            });
+
+            return response()->json([
+                'message' => 'Actionable requests retrieved successfully',
+                'data' => [
+                    'total_actionables' => count($allRequests),
+                    'replacement_requests' => $replacementRequests->count(),
+                    'follow_up_requests' => $followUpRequests->count(),
+                    'backup_requests' => $backupRequests->count(),
+                    'requests' => $allRequests
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error retrieving actionable requests',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
     public function getAllActionables()
     {
         try {
@@ -584,7 +703,7 @@ class DistController extends Controller
                         'ticket_type' => $request->is_warranty_claim ? 'Warranty Replacement' : 'Paid Replacement',
                         'status' => 'Pending',
                         'service_engineer' => $request->serviceEngineer ? $request->serviceEngineer->name : null,
-                        'created_at' => $request->created_at->toDateTimeString() // Ensure consistent date format
+                        'created_at' => $request->created_at->toDateTimeString()
                     ];
                 });
 
@@ -601,12 +720,51 @@ class DistController extends Controller
                         'ticket_type' => 'Follow-up Service',
                         'status' => 'Pending',
                         'service_engineer' => null,
-                        'created_at' => $request->created_at->toDateTimeString() // Ensure consistent date format
+                        'created_at' => $request->created_at->toDateTimeString()
                     ];
                 });
 
-            // Convert both collections to arrays and merge them
-            $allRequests = array_merge($replacementRequests->toArray(), $followUpRequests->toArray());
+            // Get pending backup service requests
+            $backupRequests = BackupService::with(['patient', 'serviceEngineer'])
+                ->where('status', 'pending')
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'backup',
+                        'patient_name' => $request->patient->name,
+                        'hospital_name' => $request->hospital_name,
+                        'ticket_type' => 'Backup Service',
+                        'status' => 'Pending',
+                        'service_engineer' => $request->serviceEngineer ? $request->serviceEngineer->name : null,
+                        'created_at' => $request->created_at->toDateTimeString()
+                    ];
+                });
+
+            // Get pending upgrade-implant requests
+            $upgradeImplantRequests = \App\Models\DeviceUpgrade::with(['patient', 'serviceEngineer'])
+                ->where('status', 'pending')
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'upgrade-implant',
+                        'patient_name' => $request->patient ? $request->patient->name : null,
+                        'hospital_name' => $request->hospital_name,
+                        'ticket_type' => 'Upgrade Implant',
+                        'status' => 'Pending',
+                        'service_engineer' => $request->serviceEngineer ? $request->serviceEngineer->name : null,
+                        'created_at' => $request->created_at ? $request->created_at->toDateTimeString() : null
+                    ];
+                });
+
+            // Convert all collections to arrays and merge them
+            $allRequests = array_merge(
+                $replacementRequests->toArray(),
+                $followUpRequests->toArray(),
+                $backupRequests->toArray(),
+                $upgradeImplantRequests->toArray()
+            );
 
             // Sort the merged array by created_at
             usort($allRequests, function ($a, $b) {
@@ -619,6 +777,8 @@ class DistController extends Controller
                     'total_actionables' => count($allRequests),
                     'replacement_requests' => $replacementRequests->count(),
                     'follow_up_requests' => $followUpRequests->count(),
+                    'backup_requests' => $backupRequests->count(),
+                    'upgrade_implant_requests' => $upgradeImplantRequests->count(),
                     'requests' => $allRequests
                 ]
             ], 200);
@@ -630,6 +790,89 @@ class DistController extends Controller
             ], 500);
         }
     }
+
+    public function assignServiceEngineerWithImplantPreparation(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'replacement_request_id' => 'required|exists:device_replacements,id',
+                'service_engineer_id' => [
+                    'required',
+                    'exists:users,id',
+                    Rule::exists('model_has_roles', 'model_id')
+                        ->where(function ($query) {
+                            $query->where('role_id', function ($subQuery) {
+                                $subQuery->select('id')
+                                    ->from('roles')
+                                    ->where('name', 'sales-representative');
+                            });
+                        })
+                ]
+            ]);
+
+            // Retrieve the replacement with its implant
+            $replacement = DeviceReplacement::with('implant')->find($validated['replacement_request_id']);
+
+            if (!$replacement || !$replacement->implant) {
+                return response()->json([
+                    'message' => 'Replacement request or associated implant not found'
+                ], 404);
+            }
+
+            \DB::beginTransaction();
+
+            try {
+                $oldImplant = $replacement->implant;
+                $replacement->service_engineer_id = $validated['service_engineer_id'];
+                $replacement->status = 'registered';
+
+                $replacement->save();
+                $oldSerial = $oldImplant->ipg_serial_number;
+                $patientId = $oldImplant->patient_id;
+
+                // First, deactivate ALL implants for this patient, regardless of current status
+                \App\Models\Implant::where('patient_id', $patientId)
+                    ->update(['active' => false]);
+
+                // Double verify the old implant is inactive
+                $oldImplant->refresh();
+                $oldImplant->update(['active' => false]);
+
+                // Create new implant record with blank IPG information
+                $newImplant = $oldImplant->replicate();
+                // $newImplant->ipg_serial_number = null; // Leave blank for now
+                // $newImplant->ipg_model_number = null; // Leave blank for now
+
+                $tempSerial = 'TEMP_' . uniqid();
+                $newImplant->ipg_serial_number = $tempSerial; // Use temporary placeholder
+                $newImplant->ipg_model_number = 'PENDING'; // Use placeholder text
+                $newImplant->active = true;
+                $newImplant->save();
+
+                \DB::commit();
+
+                return response()->json([
+                    'message' => 'Service engineer assigned successfully and new implant record prepared',
+                    'replacement_id' => $replacement->id,
+                    'old_ipg_serial_number' => $oldSerial,
+                    'service_engineer_id' => $validated['service_engineer_id'],
+                    'patient_id' => $patientId,
+                    'new_implant_id' => $newImplant->id
+                ], 200);
+
+            } catch (\Exception $innerException) {
+                \DB::rollback();
+                throw $innerException;
+            }
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error assigning service engineer and preparing implant',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 
 
 

@@ -20,10 +20,10 @@ return new class extends Migration
             $table->string('accompanying_person_name');
             $table->string('accompanying_person_phone');
           
-            $table->datetime('appointment_datetime');
-            $table->text('reason');
+            $table->datetime('appointment_datetime')->nullable();
+            $table->text('reason')->nullable();
             $table->string('status');
-    
+
             $table->foreignId('service_engineer_id')->nullable()->constrained('users');
           
             $table->timestamps();

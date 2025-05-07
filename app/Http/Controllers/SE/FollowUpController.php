@@ -7,16 +7,25 @@ use App\Models\FollowUpRequest;
 use App\Models\Payment;
 use App\Models\Patient;
 use Illuminate\Http\Request;
+use App\Services\S3StorageService;
 
 class FollowUpController extends Controller
 {
+
+
+    protected $s3Service;
+
+    public function __construct(S3StorageService $s3Service)
+    {
+        $this->s3Service = $s3Service;
+    }
     public function getFollowUpRequests(Request $request)
     {
         try {
             $serviceEngineerId = $request->user()->id;
 
             $followUpRequests = FollowUpRequest::with(['patient'])
-                ->whereIn('status', [FollowUpRequest::STATUS_APPROVED, FollowUpRequest::STATUS_COMPLETED])
+                ->whereIn('status', [FollowUpRequest::STATUS_APPROVED, FollowUpRequest::STATUS_COMPLETED, FollowUpRequest::STATUS_PAYMENT_PENDING])
                 ->where('service_engineer_id', $serviceEngineerId)
                 ->get()
                 ->map(function ($request) {
@@ -28,7 +37,12 @@ class FollowUpController extends Controller
                         'ticket_type' => 'Follow-up Service',
                         'appointment_datetime' => $request->appointment_datetime,
                         // Change status display to 'pending' when status is 'approved'
-                        'status' => $request->status === FollowUpRequest::STATUS_APPROVED ? 'pending' : $request->status,
+                        // 'status' => $request->status === FollowUpRequest::STATUS_APPROVED ? 'pending' : $request->status,
+                        'status' => $request->status === FollowUpRequest::STATUS_APPROVED
+                            ? 'pending'
+                            : ($request->status === FollowUpRequest::STATUS_PAYMENT_PENDING
+                                ? 'Payment pending'
+                                : $request->status),
                     ];
                 });
 
@@ -60,9 +74,16 @@ class FollowUpController extends Controller
 
             // Check if patient has an implant
             $hasImplant = $followUpRequest->patient && $followUpRequest->patient->implant;
+            $paymentStatus = $followUpRequest->payment ? $followUpRequest->payment->payment_status : 'N/A';
+
 
             // Build response data
             $responseData = [
+                'follow_up_request_id' => $followUpRequest->id, // Auto-incrementing ID
+                'follow_up_unique_id' => $followUpRequest->follow_up_id, // Unique string ID 'FU-...'
+                'payment_id' => $followUpRequest->payment_id, // Associated payment ID
+                'payment_status' => $paymentStatus,
+                'payment_amount' => $followUpRequest->payment ? $followUpRequest->payment->amount : null, // Add payment amount
                 // Appointment Details
                 'appointment_details' => [
                     'appointment_datetime' => $followUpRequest->appointment_datetime,
@@ -74,14 +95,21 @@ class FollowUpController extends Controller
                 'hospital_details' => [
                     'hospital_name' => $followUpRequest->hospital_name,
                     'doctor_name' => $followUpRequest->doctor_name,
-                    'state' => $followUpRequest->state
+                    'state' => $followUpRequest->state,
+                    'channel_partner' => $followUpRequest->channel_partner,
+                    'shubham' => 'irrelevant frontend guy'
+
                 ],
 
                 // Patient Details
                 'patient_details' => [
+
+                    'patient_id' => $followUpRequest->patient->id,
                     'patient_name' => $followUpRequest->patient->name,
                     'patient_phone' => $followUpRequest->patient->phone_number,
-                    'patient_email' => $followUpRequest->patient->email
+                    'patient_email' => $followUpRequest->patient->email,
+                    
+
                 ],
 
                 // Accompanying Person Details
@@ -90,6 +118,7 @@ class FollowUpController extends Controller
                     'phone' => $followUpRequest->accompanying_person_phone
                 ]
             ];
+
 
             // Add device details if implant exists, otherwise indicate no implant registered
             if ($hasImplant) {
@@ -218,7 +247,7 @@ class FollowUpController extends Controller
      * This allows service engineers to notify patients that they need to make a payment
      */
 
-    public function createPatientPaymentRequest(Request $request)
+    public function createPatientPaymentRequest1(Request $request)
     {
         try {
             // Validate request data
@@ -262,6 +291,101 @@ class FollowUpController extends Controller
             ], 201);
 
         } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error creating payment request',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    public function createPatientPaymentRequest(Request $request)
+    {
+        // Start a database transaction for data consistency
+        \DB::beginTransaction();
+
+        try {
+            // Validate request data with additional fields
+            $validated = $request->validate([
+                'patient_id' => 'required|exists:patients,id',
+                'amount' => 'required|numeric|min:0',
+                'gst_number' => 'nullable|string',
+                'pan_number' => 'nullable|string',
+                'state' => 'required|string',
+                'hospital_name' => 'required|string',
+                'doctor_name' => 'required|string',
+                'channel_partner' => 'required|string',
+                'accompanying_person_name' => 'required|string',
+                'accompanying_person_phone' => 'required|string',
+                'reason' => 'nullable|string', // Optional reason for follow-up
+                'appointment_datetime' => 'nullable|date' // Optional appointment date/time
+            ]);
+
+            // Get patient and service engineer ID
+            $patient = Patient::findOrFail($validated['patient_id']);
+            $serviceEngineerId = $request->user()->id;
+
+            // Create payment request record with additional data in payment_details
+            $payment = Payment::create([
+                'patient_id' => $patient->id,
+                'service_engineer_id' => $serviceEngineerId,
+                'gst_number' => $validated['gst_number'] ?? 'AUTO-GENERATED',
+                'pan_number' => $validated['pan_number'] ?? 'AUTO-GENERATED',
+                'amount' => $validated['amount'],
+                'payment_status' => 'pending', // Pending payment from patient
+                'payment_date' => now(),
+                'payment_type' => 'follow_up',
+                'payment_details' => [
+                    'requested_by' => 'service_engineer',
+                    'requested_at' => now()->toDateTimeString(),
+                    'state' => $validated['state'],
+                    'hospital_name' => $validated['hospital_name'],
+                    'doctor_name' => $validated['doctor_name'],
+                    'channel_partner' => $validated['channel_partner'],
+                    'accompanying_person_name' => $validated['accompanying_person_name'],
+                    'accompanying_person_phone' => $validated['accompanying_person_phone']
+                ]
+            ]);
+
+            // Create a preliminary follow-up request with payment_pending status
+            $followUpRequest = FollowUpRequest::create([
+                'patient_id' => $patient->id,
+                'payment_id' => $payment->id,
+                'status' => FollowUpRequest::STATUS_PAYMENT_PENDING, // Custom status to indicate waiting for payment
+                'service_engineer_id' => $serviceEngineerId,
+                'state' => $validated['state'],
+                'hospital_name' => $validated['hospital_name'],
+                'doctor_name' => $validated['doctor_name'],
+                'channel_partner' => $validated['channel_partner'],
+                'accompanying_person_name' => $validated['accompanying_person_name'],
+                'accompanying_person_phone' => $validated['accompanying_person_phone'],
+                'appointment_datetime' => $validated['appointment_datetime'] ?? null,
+            ]);
+
+            // Commit the transaction
+            \DB::commit();
+
+            return response()->json([
+                'message' => 'Payment request created successfully for patient',
+                'data' => [
+                    'payment_id' => $payment->id,
+                    'follow_up_request_id' => $followUpRequest->id,
+                    'amount' => $payment->amount,
+                    'patient_name' => $patient->name,
+                    'patient_phone' => $patient->phone_number,
+                    'service_engineer_id' => $serviceEngineerId,
+                    'status' => 'payment_pending',
+                    'state' => $validated['state'],
+                    'hospital_name' => $validated['hospital_name'],
+                    'doctor_name' => $validated['doctor_name'],
+                    'channel_partner' => $validated['channel_partner'],
+                    'accompanying_person_name' => $validated['accompanying_person_name'],
+                    'accompanying_person_phone' => $validated['accompanying_person_phone']
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
+            // Roll back the transaction if there's an error
+            \DB::rollBack();
+
             return response()->json([
                 'message' => 'Error creating payment request',
                 'error' => $e->getMessage()
@@ -331,7 +455,8 @@ class FollowUpController extends Controller
         }
     }
 
-    public function createFollowUpRequest(Request $request)
+    //changed to the name for testing purposes! 
+    public function createFollowUpRequest1(Request $request)
     {
         // Start database transaction
         \DB::beginTransaction();
@@ -457,6 +582,206 @@ class FollowUpController extends Controller
         }
     }
 
+    public function createFollowUpRequest(Request $request)
+    {
+        // Start database transaction
+        \DB::beginTransaction();
+
+        try {
+            // Validate patient exists and get Service Engineer ID
+            $patient = Patient::findOrFail($request->patient_id);
+            $serviceEngineerId = $request->user()->id;
+
+            // Validate incoming request data
+            $validated = $request->validate([
+                'patient_id' => 'required|exists:patients,id', // Ensure patient_id is validated here too
+                'state' => 'required|string',
+                'hospital_name' => 'required|string',
+                'doctor_name' => 'required|string',
+                'channel_partner' => 'required|string',
+                'accompanying_person_name' => 'required|string',
+                'accompanying_person_phone' => 'required|string',
+                'appointment_datetime' => 'required|date|after_or_equal:today', // Allow today as well
+                'reason' => 'required|string',
+                'is_paid' => 'required|boolean',
+                'payment_id' => 'nullable|exists:payments,id'
+            ]);
+
+            $payment = null;
+
+            // --- Handle Payment Logic First ---
+            if ($validated['is_paid']) {
+                if (isset($validated['payment_id'])) {
+                    // First, check if the payment exists at all
+                    $paymentRecord = Payment::find($validated['payment_id']);
+                    if (!$paymentRecord) {
+                        \Log::warning('Payment ID does not exist', [
+                            'payment_id' => $validated['payment_id']
+                        ]);
+                        \DB::rollBack();
+                        return response()->json([
+                            'message' => 'Payment ID does not exist.',
+                        ], 400);
+                    }
+            
+                    // Next, check if the payment belongs to the patient
+                    if ($paymentRecord->patient_id != $patient->id) {
+                        \Log::warning('Payment does not belong to patient', [
+                            'payment_id' => $validated['payment_id'],
+                            'expected_patient_id' => $patient->id,
+                            'actual_patient_id' => $paymentRecord->patient_id
+                        ]);
+                        \DB::rollBack();
+                        return response()->json([
+                            'message' => 'Payment does not belong to this patient.',
+                        ], 400);
+                    }
+            
+                    // Finally, check if the payment is completed
+                    if ($paymentRecord->payment_status !== 'completed') {
+                        \Log::warning('Payment is not completed', [
+                            'payment_id' => $validated['payment_id'],
+                            'payment_status' => $paymentRecord->payment_status
+                        ]);
+                        \DB::rollBack();
+                        return response()->json([
+                            'message' => 'Payment is not completed.',
+                        ], 400);
+                    }
+            
+                    // All checks passed, use this payment
+                    $payment = $paymentRecord;
+                    \Log::info('Payment found and completed', [
+                        'payment_id' => $payment->id,
+                        'patient_id' => $payment->patient_id,
+                        'status' => $payment->payment_status
+                    ]);
+                } else {
+                    // Paid service requires a completed payment ID
+                    \DB::rollBack();
+                    return response()->json([
+                        'message' => 'For paid service, a completed payment ID is required. Please complete payment first or provide the payment ID.',
+                    ], 400);
+                }
+            } else {
+                // Create a new payment record for free tier service
+                $payment = Payment::create([
+                    'patient_id' => $patient->id,
+                    'service_engineer_id' => $serviceEngineerId,
+                    'gst_number' => $request->gst_number ?? 'AUTO-GENERATED',
+                    'pan_number' => $request->pan_number ?? 'AUTO-GENERATED',
+                    'amount' => 0,
+                    'payment_status' => 'completed',
+                    'payment_date' => now(),
+                    'payment_type' => 'follow_up',
+                    'payment_details' => [
+                        'auto_generated' => true,
+                        'is_free_tier' => true,
+                        'created_during' => 'follow_up_request_creation'
+                    ]
+                ]);
+            }
+            // --- Check for Existing Payment Pending Request ---
+            $existingRequest = FollowUpRequest::where('patient_id', $patient->id)
+                ->where('status', FollowUpRequest::STATUS_PAYMENT_PENDING)
+                ->lockForUpdate()
+                ->first();
+
+            $followUpRequest = null;
+
+            if ($existingRequest) {
+                // --- Update Existing Payment Pending Request ---
+                $existingRequest->update([
+                    'payment_id' => $payment->id, // Link the correct payment
+                    'status' => FollowUpRequest::STATUS_COMPLETED, // Mark as completed
+                    'service_engineer_id' => $serviceEngineerId, // Ensure SE is assigned
+                    'state' => $validated['state'],
+                    'hospital_name' => $validated['hospital_name'],
+                    'doctor_name' => $validated['doctor_name'],
+                    'channel_partner' => $validated['channel_partner'],
+                    'accompanying_person_name' => $validated['accompanying_person_name'],
+                    'accompanying_person_phone' => $validated['accompanying_person_phone'],
+                    'appointment_datetime' => $validated['appointment_datetime'],
+                    'reason' => $validated['reason']
+                ]);
+                $followUpRequest = $existingRequest->fresh(); // Get the updated model instance
+                $message = 'Existing follow-up request updated and completed successfully';
+
+            } else {
+                // --- No Payment Pending Request Found, Check for Other Duplicates ---
+                $duplicateCheck = FollowUpRequest::where('patient_id', $patient->id)
+                    ->whereIn('status', [
+                        FollowUpRequest::STATUS_PENDING,
+                        FollowUpRequest::STATUS_APPROVED,
+                        FollowUpRequest::STATUS_COMPLETED // Check completed too, within a time frame
+                    ])
+                    ->whereBetween('created_at', [now()->subHours(24), now()]) // Check last 24 hours
+                    ->exists(); // More efficient check if we just need existence
+
+                // if ($duplicateCheck) {
+                //     \DB::rollBack();
+                //     return response()->json([
+                //         'message' => 'An active or recently completed follow-up request already exists for this patient within the last 24 hours.',
+                //     ], 400);
+                // }
+
+                // --- Create New Follow-up Request ---
+                $followUpRequest = FollowUpRequest::create([
+                    'patient_id' => $patient->id,
+                    'payment_id' => $payment->id,
+                    'status' => FollowUpRequest::STATUS_COMPLETED, // Directly completed
+                    'service_engineer_id' => $serviceEngineerId,
+                    'state' => $validated['state'],
+                    'hospital_name' => $validated['hospital_name'],
+                    'doctor_name' => $validated['doctor_name'],
+                    'channel_partner' => $validated['channel_partner'],
+                    'accompanying_person_name' => $validated['accompanying_person_name'],
+                    'accompanying_person_phone' => $validated['accompanying_person_phone'],
+                    'appointment_datetime' => $validated['appointment_datetime'],
+                    'reason' => $validated['reason']
+                ]);
+                $message = 'New follow-up request created successfully';
+            }
+
+            // Commit transaction
+            \DB::commit();
+
+            // Load service engineer name for the response if available
+            $serviceEngineerName = $followUpRequest->serviceEngineer ? $followUpRequest->serviceEngineer->name : 'N/A';
+
+
+            return response()->json([
+                'message' => $message,
+                'data' => [
+                    'follow_up_id' => $followUpRequest->follow_up_id, // Use the unique string ID
+                    'request_id' => $followUpRequest->id, // The auto-incrementing ID
+                    'status' => $followUpRequest->status,
+                    'service_engineer' => $serviceEngineerName,
+                    'payment_status' => $payment->payment_status,
+                    'payment_amount' => $payment->amount,
+                    'created_at' => $followUpRequest->created_at->toDateTimeString(),
+                    'completed_at' => $followUpRequest->updated_at->toDateTimeString() // Use updated_at for completion time
+                ]
+            ], 201); // Use 201 for creation, maybe 200 for update? Sticking to 201 for simplicity.
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \DB::rollBack();
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            // Rollback transaction on any other error
+            \DB::rollBack();
+            \Log::error("Error in createFollowUpRequest: " . $e->getMessage() . " Trace: " . $e->getTraceAsString()); // Log detailed error
+
+            return response()->json([
+                'message' => 'Error processing follow-up request',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
 
 
     public function getPaymentStatus($paymentId)
@@ -514,6 +839,8 @@ class FollowUpController extends Controller
         }
     }
 
+
+
     public function getAllActionables(Request $request)
     {
         try {
@@ -533,17 +860,15 @@ class FollowUpController extends Controller
                         'ticket_type' => 'Follow-up Service',
                         'status' => 'pending',
                         'appointment_datetime' => $request->appointment_datetime,
-                        // 'created_at' => $request->created_at->toDateTimeString()
+                        'created_at' => $request->created_at->toDateTimeString()
                     ];
                 });
 
             // Get replacement requests assigned to this service engineer
-            // Added where clause to only include incomplete services
             $replacementRequests = \App\Models\DeviceReplacement::with(['patient'])
                 ->where('service_engineer_id', $serviceEngineerId)
                 ->whereIn('status', ['approved', 'pending', 'registered'])
-                ->where('service_completed', false)  // Only get replacements that haven't been completed
-                ->whereNotNull('new_ipg_serial_number') // Exclude if new_ipg_serial_number is null
+                ->where('service_completed', false)
                 ->get()
                 ->map(function ($request) {
                     return [
@@ -558,8 +883,49 @@ class FollowUpController extends Controller
                     ];
                 });
 
+            // Get backup service requests assigned to this service engineer
+            $backupServiceRequests = \App\Models\BackupService::with(['patient'])
+                ->where('service_engineer_id', $serviceEngineerId)
+                ->whereIn('status', ['assigned', 'confirmed'])
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'backup',
+                        'patient_name' => $request->patient->name,
+                        'hospital_name' => $request->hospital_name ?? 'Not specified',
+                        'ticket_type' => 'Backup Service',
+                        'status' => 'pending',
+                        'appointment_datetime' => $request->appointment_datetime,
+                        'created_at' => $request->created_at->toDateTimeString()
+                    ];
+                });
+
+            // Get assigned upgrade-implant requests for this service engineer
+            $upgradeImplantRequests = \App\Models\DeviceUpgrade::with(['patient'])
+                ->where('service_engineer_id', $serviceEngineerId)
+                ->where('status', 'assigned')
+                ->get()
+                ->map(function ($request) {
+                    return [
+                        'id' => $request->id,
+                        'request_type' => 'upgrade-implant',
+                        'patient_name' => $request->patient ? $request->patient->name : null,
+                        'hospital_name' => $request->hospital_name ?? 'Not specified',
+                        'ticket_type' => 'Upgrade Implant',
+                        'status' => 'pending',
+                        'appointment_datetime' => null,
+                        'created_at' => $request->created_at ? $request->created_at->toDateTimeString() : null
+                    ];
+                });
+
             // Combine and sort all actionables by creation date (newest first)
-            $allActionables = array_merge($followUpRequests->toArray(), $replacementRequests->toArray());
+            $allActionables = array_merge(
+                $followUpRequests->toArray(),
+                $replacementRequests->toArray(),
+                $backupServiceRequests->toArray(),
+                $upgradeImplantRequests->toArray()
+            );
             usort($allActionables, function ($a, $b) {
                 return strtotime($b['created_at']) - strtotime($a['created_at']);
             });
@@ -570,6 +936,8 @@ class FollowUpController extends Controller
                     'total_actionables' => count($allActionables),
                     'follow_up_requests' => $followUpRequests->count(),
                     'replacement_requests' => $replacementRequests->count(),
+                    'backup_requests' => $backupServiceRequests->count(),
+                    'upgrade_implant_requests' => $upgradeImplantRequests->count(),
                     'actionables' => $allActionables
                 ]
             ], 200);
@@ -581,8 +949,6 @@ class FollowUpController extends Controller
             ], 500);
         }
     }
-
-
 
     /**
      * Get only the count of actionable items for badge/notification display
@@ -596,7 +962,7 @@ class FollowUpController extends Controller
         try {
             $serviceEngineerId = $request->user()->id;
 
-            // Count follow-up requests (don't load relations to improve performance)
+            // Count follow-up requests
             $followUpCount = FollowUpRequest::where('service_engineer_id', $serviceEngineerId)
                 ->whereIn('status', [FollowUpRequest::STATUS_APPROVED, FollowUpRequest::STATUS_PENDING])
                 ->count();
@@ -605,18 +971,30 @@ class FollowUpController extends Controller
             $replacementCount = \App\Models\DeviceReplacement::where('service_engineer_id', $serviceEngineerId)
                 ->whereIn('status', ['approved', 'pending', 'registered'])
                 ->where('service_completed', false)
-                ->whereNotNull('new_ipg_serial_number')
+                // ->whereNotNull('new_ipg_serial_number')
+                ->count();
+
+            // Count backup service requests
+            $backupCount = \App\Models\BackupService::where('service_engineer_id', $serviceEngineerId)
+                ->whereIn('status', ['assigned', 'confirmed'])
+                ->count();
+
+            // Count assigned upgrade-implant requests
+            $upgradeImplantCount = \App\Models\DeviceUpgrade::where('service_engineer_id', $serviceEngineerId)
+                ->where('status', 'assigned')
                 ->count();
 
             // Total count
-            $totalActionables = $followUpCount + $replacementCount;
+            $totalActionables = $followUpCount + $replacementCount + $backupCount + $upgradeImplantCount;
 
             return response()->json([
                 'message' => 'Actionable counts retrieved successfully',
                 'data' => [
                     'total_actionables' => $totalActionables,
                     'follow_up_requests' => $followUpCount,
-                    'replacement_requests' => $replacementCount
+                    'replacement_requests' => $replacementCount,
+                    'backup_requests' => $backupCount,
+                    'upgrade_implant_requests' => $upgradeImplantCount
                 ]
             ], 200);
 
@@ -714,6 +1092,10 @@ class FollowUpController extends Controller
                 $latestImplant = \App\Models\Implant::find($replacement->implant_id);
             }
 
+            $patientPhotoUrl = null;
+            if ($replacement->patient && $replacement->patient->patient_photo) { // Assuming 'photo_path' stores the S3 key or relative path
+                $patientPhotoUrl = $this->s3Service->getFileUrl($replacement->patient->patient_photo); // Changed to getFileUrl
+            }
             // Format simplified response data
             $responseData = [
                 // Location and scheduling details
@@ -726,11 +1108,13 @@ class FollowUpController extends Controller
                 // Patient information
                 'patient_name' => $replacement->patient->name,
                 'patient_phone' => $replacement->patient->phone_number,
+                'patient_photo' => $patientPhotoUrl,
             ];
 
             // Add device information if we have an implant
             if ($latestImplant) {
                 $responseData['device_details'] = [
+                    'implant_id' => $latestImplant->id,
                     'therapy_name' => $latestImplant->therapy_name ?? 'Not specified',
                     'device_type' => $latestImplant->device_name ?? 'Not specified',
                     'ipg_serial_number' => $latestImplant->ipg_serial_number,

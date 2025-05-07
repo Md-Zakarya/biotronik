@@ -16,7 +16,9 @@ class IpgDeviceController extends Controller
 {
     public function exportToExcel()
     {
-        return Excel::download(new IpgDevicesExport, 'ipg_devices.csv');
+        // return Excel::download(new IpgDevicesExport, 'ipg_devices.csv');
+        return Excel::download(new IpgDevicesExport, 'ipg_devices.xlsx');
+
     }
 
      /**

@@ -29,6 +29,7 @@ class IpgModelController extends Controller
                 'devices.*.ipg_serial_number' => 'required|string|distinct|unique:ipg_serials,ipg_serial_number',
                 'devices.*.model_number' => 'required|string|exists:ipg_models,model_number',
                 'devices.*.distributor_id' => 'nullable|exists:users,id',
+                'devices.*.date_added' => 'nullable|date',
             ]);
 
             if ($validator->fails()) {
@@ -169,6 +170,7 @@ class IpgModelController extends Controller
                         'ipg_serial_number' => $device['ipg_serial_number'],
                         'model_number' => $device['model_number'],
                         'distributor_id' => $distributorId,
+                        'date_added' => $device['date_added'] ?? now(),
                     ]);
 
                     $results[] = [
@@ -576,34 +578,34 @@ class IpgModelController extends Controller
         try {
             $query = IpgSerial::select('id', 'ipg_serial_number', 'model_number')
                 ->with('ipgModel:model_number,model_name,device_type');
-    
+
             // Add a condition to exclude serials that exist in implants
             $query->whereNotExists(function ($subquery) {
                 $subquery->select(\DB::raw(1))
                     ->from('implants')
                     ->whereColumn('implants.ipg_serial_number', 'ipg_serials.ipg_serial_number');
             });
-    
+
             // Search term
             if ($request->has('search')) {
                 $searchTerm = $request->search;
                 $query->where('ipg_serial_number', 'like', "%{$searchTerm}%");
             }
-    
+
             // Limit results (default 10)
             $limit = $request->input('limit', 10);
             $serials = $query->limit($limit)->get();
-    
+
             // Format for dropdown
             $formattedSerials = $serials->map(function ($serial) {
                 $modelInfo = $serial->ipgModel ?
                     " ({$serial->ipgModel->model_name} - {$serial->ipgModel->device_type})" :
                     "";
-    
+
                 // Determine therapy name based on device type
                 $deviceType = $serial->ipgModel ? $serial->ipgModel->device_type : '';
                 $therapyName = (stripos($deviceType, 'tachy') !== false) ? 'Tachy' : 'Brady';
-    
+
                 return [
                     'id' => $serial->id,
                     'value' => $serial->ipg_serial_number,
@@ -615,7 +617,7 @@ class IpgModelController extends Controller
                     'therapy_name' => $therapyName // Added therapy name based on device type
                 ];
             });
-    
+
             return response()->json([
                 'success' => true,
                 'data' => $formattedSerials
@@ -692,7 +694,76 @@ class IpgModelController extends Controller
 
 
 
+    /**
+     * Search for non-implanted IPG serials
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function searchNonImplantedSerials(Request $request)
+    {
+        try {
+            // Start with base query
+            $query = IpgSerial::select('id', 'ipg_serial_number', 'model_number')
+                ->with('ipgModel:model_number,model_name,device_type')
+                ->where('is_implanted', false);
 
+            // Apply search filter if provided
+            if ($request->filled('search')) {
+                $searchTerm = $request->input('search');
+                $query->where('ipg_serial_number', 'like', "%{$searchTerm}%");
+            }
+
+            // Apply optional distributor filter
+            if ($request->filled('distributor_id')) {
+                $query->where('distributor_id', $request->input('distributor_id'));
+            }
+
+            // Apply optional model filter
+            if ($request->filled('model_number')) {
+                $query->where('model_number', $request->input('model_number'));
+            }
+
+            // Apply pagination with customizable limit
+            $limit = $request->input('limit', 50);
+            $serials = $query->limit($limit)->get();
+
+            // Format serials data for dropdown display
+            $formattedSerials = $serials->map(function ($serial) {
+                // Create readable model info display
+                $modelInfo = $serial->ipgModel
+                    ? " ({$serial->ipgModel->model_name} - {$serial->ipgModel->device_type})"
+                    : "";
+
+                return [
+                    'id' => $serial->id,
+                    'value' => $serial->ipg_serial_number,
+                    'label' => $serial->ipg_serial_number . $modelInfo,
+          
+                    'model_number' => $serial->model_number,
+                    'model_name' => $serial->ipgModel ? $serial->ipgModel->model_name : null,
+                    'device_type' => $serial->ipgModel ? $serial->ipgModel->device_type : null
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $formattedSerials
+            ]);
+        } catch (\Exception $e) {
+            // Log the error
+            \Log::error('Failed to search non-implanted IPG serials', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to search non-implanted IPG serials',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 
 }
 

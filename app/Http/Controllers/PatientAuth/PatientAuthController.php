@@ -13,34 +13,46 @@ use Illuminate\Validation\Rule;
 
 
 class PatientAuthController extends Controller
-{
+{   
+
+
+
+    //register method 01-05-2025 
+   
     public function registerPatient(Request $request)
     {
         try {
             $validatedData = $request->validate([
+                 // the email uniqueness was removed due to the request, but commented if will be used for later. 
+                // 'Auth_name' => 'required|string|max:255',
+                // 'email' => [
+                //     'required',
+                //     'string',
+                //     'email',
+                //     function ($attribute, $value, $fail) use ($request) {
+                //         if (empty($request->phone_number)) {
+                //             $exists = Patient::where('email', $value)->exists();
+                //             if ($exists) {
+                //                 $fail('The email has already been taken.');
+                //             }
+                //         }
+                //     }
+                // ],
+                // 'phone_number' => 'nullable|string|unique:patients|regex:/^[0-9]{10}$/',
+                // 'password' => 'required|string|min:8|regex:/^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$/',
+                // 'otp' => 'required_with:phone_number|string|size:6',
                 'Auth_name' => 'required|string|max:255',
-                'email' => [
-                    'required',
-                    'string',
-                    'email',
-                    function ($attribute, $value, $fail) use ($request) {
-                        if (empty($request->phone_number)) {
-                            $exists = Patient::where('email', $value)->exists();
-                            if ($exists) {
-                                $fail('The email has already been taken.');
-                            }
-                        }
-                    }
-                ],
-                'phone_number' => 'nullable|string|unique:patients|regex:/^[0-9]{10}$/',
+                'email' => 'nullable|string|email', 
+                'phone_number' => 'required|string|unique:patients|regex:/^[0-9]{10}$/', // Changed nullable to required
                 'password' => 'required|string|min:8|regex:/^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$/',
-                'otp' => 'required_with:phone_number|string|size:6',
+                'otp' => 'required|string|size:6',
+           
             ], [
                 'Auth_name.required' => 'Name is required',
                 'Auth_name.max' => 'Name cannot exceed 255 characters',
                 'email.required' => 'Email is required',
                 'email.email' => 'Please enter a valid email address',
-                'email.unique' => 'This email is already registered',
+                // 'email.unique' => 'This email is already registered',
                 'phone_number.required' => 'Phone number is required',
                 'phone_number.unique' => 'This phone number is already registered',
                 'phone_number.regex' => 'Please enter a valid 10-digit phone number',
