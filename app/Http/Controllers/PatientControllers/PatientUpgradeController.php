@@ -89,13 +89,39 @@ class PatientUpgradeController extends Controller
     public function getUpgradeRequests(Request $request)
     {
         $user = $request->user();
-
-        $requests = DeviceUpgrade::where('patient_id', $user->id)
+    
+        $latestRequest = DeviceUpgrade::where('patient_id', $user->id)
             ->orderBy('created_at', 'desc')
-            ->get();
-
+            ->first();
+    
+        if (!$latestRequest) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No upgrade request found.',
+                'data' => null
+            ], 404);
+        }
+    
         return response()->json([
-            'upgrade_requests' => $requests
-        ]);
+            'success' => true,
+            'message' => 'Latest upgrade request retrieved successfully.',
+            'data' => [
+                'id' => $latestRequest->id,
+                'status' => $latestRequest->status,
+                'old_implantation_date' => $latestRequest->old_implantation_date,
+                'old_implant_brand' => $latestRequest->old_implant_brand,
+                'old_ipg_model' => $latestRequest->old_ipg_model,
+                'old_lead_brand' => $latestRequest->old_lead_brand,
+                'old_ra_rv_lead_model' => $latestRequest->old_ra_rv_lead_model,
+                'old_csp_catheter_brand' => $latestRequest->old_csp_catheter_brand,
+                'old_csp_lead_model' => $latestRequest->old_csp_lead_model,
+                'state' => $latestRequest->state,
+                'hospital_name' => $latestRequest->hospital_name,
+                'doctor_name' => $latestRequest->doctor_name,
+                'channel_partner' => $latestRequest->channel_partner,
+                'created_at' => $latestRequest->created_at,
+                'updated_at' => $latestRequest->updated_at,
+            ]
+        ], 200);
     }
 }

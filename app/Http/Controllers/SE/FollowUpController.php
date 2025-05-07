@@ -7,9 +7,18 @@ use App\Models\FollowUpRequest;
 use App\Models\Payment;
 use App\Models\Patient;
 use Illuminate\Http\Request;
+use App\Services\S3StorageService;
 
 class FollowUpController extends Controller
 {
+
+
+    protected $s3Service;
+
+    public function __construct(S3StorageService $s3Service)
+    {
+        $this->s3Service = $s3Service;
+    }
     public function getFollowUpRequests(Request $request)
     {
         try {
@@ -86,14 +95,21 @@ class FollowUpController extends Controller
                 'hospital_details' => [
                     'hospital_name' => $followUpRequest->hospital_name,
                     'doctor_name' => $followUpRequest->doctor_name,
-                    'state' => $followUpRequest->state
+                    'state' => $followUpRequest->state,
+                    'channel_partner' => $followUpRequest->channel_partner,
+                    'shubham' => 'irrelevant frontend guy'
+
                 ],
 
                 // Patient Details
                 'patient_details' => [
+
+                    'patient_id' => $followUpRequest->patient->id,
                     'patient_name' => $followUpRequest->patient->name,
                     'patient_phone' => $followUpRequest->patient->phone_number,
-                    'patient_email' => $followUpRequest->patient->email
+                    'patient_email' => $followUpRequest->patient->email,
+                    
+
                 ],
 
                 // Accompanying Person Details
@@ -596,18 +612,50 @@ class FollowUpController extends Controller
             // --- Handle Payment Logic First ---
             if ($validated['is_paid']) {
                 if (isset($validated['payment_id'])) {
-                    // Verify the provided payment exists, belongs to the patient, and is completed
-                    $payment = Payment::where('id', $validated['payment_id'])
-                        ->where('patient_id', $patient->id)
-                        ->where('payment_status', 'completed')
-                        ->first();
-
-                    if (!$payment) {
+                    // First, check if the payment exists at all
+                    $paymentRecord = Payment::find($validated['payment_id']);
+                    if (!$paymentRecord) {
+                        \Log::warning('Payment ID does not exist', [
+                            'payment_id' => $validated['payment_id']
+                        ]);
                         \DB::rollBack();
                         return response()->json([
-                            'message' => 'Invalid or incomplete payment ID provided for this patient.',
+                            'message' => 'Payment ID does not exist.',
                         ], 400);
                     }
+            
+                    // Next, check if the payment belongs to the patient
+                    if ($paymentRecord->patient_id != $patient->id) {
+                        \Log::warning('Payment does not belong to patient', [
+                            'payment_id' => $validated['payment_id'],
+                            'expected_patient_id' => $patient->id,
+                            'actual_patient_id' => $paymentRecord->patient_id
+                        ]);
+                        \DB::rollBack();
+                        return response()->json([
+                            'message' => 'Payment does not belong to this patient.',
+                        ], 400);
+                    }
+            
+                    // Finally, check if the payment is completed
+                    if ($paymentRecord->payment_status !== 'completed') {
+                        \Log::warning('Payment is not completed', [
+                            'payment_id' => $validated['payment_id'],
+                            'payment_status' => $paymentRecord->payment_status
+                        ]);
+                        \DB::rollBack();
+                        return response()->json([
+                            'message' => 'Payment is not completed.',
+                        ], 400);
+                    }
+            
+                    // All checks passed, use this payment
+                    $payment = $paymentRecord;
+                    \Log::info('Payment found and completed', [
+                        'payment_id' => $payment->id,
+                        'patient_id' => $payment->patient_id,
+                        'status' => $payment->payment_status
+                    ]);
                 } else {
                     // Paid service requires a completed payment ID
                     \DB::rollBack();
@@ -670,12 +718,12 @@ class FollowUpController extends Controller
                     ->whereBetween('created_at', [now()->subHours(24), now()]) // Check last 24 hours
                     ->exists(); // More efficient check if we just need existence
 
-                if ($duplicateCheck) {
-                    \DB::rollBack();
-                    return response()->json([
-                        'message' => 'An active or recently completed follow-up request already exists for this patient within the last 24 hours.',
-                    ], 400);
-                }
+                // if ($duplicateCheck) {
+                //     \DB::rollBack();
+                //     return response()->json([
+                //         'message' => 'An active or recently completed follow-up request already exists for this patient within the last 24 hours.',
+                //     ], 400);
+                // }
 
                 // --- Create New Follow-up Request ---
                 $followUpRequest = FollowUpRequest::create([
@@ -923,7 +971,7 @@ class FollowUpController extends Controller
             $replacementCount = \App\Models\DeviceReplacement::where('service_engineer_id', $serviceEngineerId)
                 ->whereIn('status', ['approved', 'pending', 'registered'])
                 ->where('service_completed', false)
-                ->whereNotNull('new_ipg_serial_number')
+                // ->whereNotNull('new_ipg_serial_number')
                 ->count();
 
             // Count backup service requests
@@ -1044,6 +1092,10 @@ class FollowUpController extends Controller
                 $latestImplant = \App\Models\Implant::find($replacement->implant_id);
             }
 
+            $patientPhotoUrl = null;
+            if ($replacement->patient && $replacement->patient->patient_photo) { // Assuming 'photo_path' stores the S3 key or relative path
+                $patientPhotoUrl = $this->s3Service->getFileUrl($replacement->patient->patient_photo); // Changed to getFileUrl
+            }
             // Format simplified response data
             $responseData = [
                 // Location and scheduling details
@@ -1056,6 +1108,7 @@ class FollowUpController extends Controller
                 // Patient information
                 'patient_name' => $replacement->patient->name,
                 'patient_phone' => $replacement->patient->phone_number,
+                'patient_photo' => $patientPhotoUrl,
             ];
 
             // Add device information if we have an implant
