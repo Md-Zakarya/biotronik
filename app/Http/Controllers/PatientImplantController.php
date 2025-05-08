@@ -2230,23 +2230,44 @@ class PatientImplantController extends Controller
     }
 
 
+    // public function getWarrantyStatus(Request $request)
+    // {
+    //     $user = $request->user();
+    //     $implant = $user->implant;
+
+    //     if (!$implant) {
+    //         return response()->json(['message' => 'Implant not found.'], 404);
+    //     }
+
+    //     $warrantyExpiration = $implant->warranty_expired_at;
+    //     $isExpired = now()->greaterThan($warrantyExpiration);
+
+    //     return response()->json([
+    //         'warranty_expiration_date' => $warrantyExpiration,
+    //         'is_expired' => $isExpired,
+    //     ]);
+    // }
     public function getWarrantyStatus(Request $request)
-    {
-        $user = $request->user();
-        $implant = $user->implant;
+{
+    $user = $request->user();
 
-        if (!$implant) {
-            return response()->json(['message' => 'Implant not found.'], 404);
-        }
+    // Retrieve the latest implant for the user
+    $implant = Implant::where('patient_id', $user->id)
+        ->latest('created_at')
+        ->first();
 
-        $warrantyExpiration = $implant->warranty_expired_at;
-        $isExpired = now()->greaterThan($warrantyExpiration);
-
-        return response()->json([
-            'warranty_expiration_date' => $warrantyExpiration,
-            'is_expired' => $isExpired,
-        ]);
+    if (!$implant) {
+        return response()->json(['message' => 'Implant not found.'], 404);
     }
+
+    $warrantyExpiration = $implant->warranty_expired_at;
+    $isExpired = $warrantyExpiration ? now()->greaterThan($warrantyExpiration) : true;
+
+    return response()->json([
+        'warranty_expiration_date' => $warrantyExpiration,
+        'is_expired' => $isExpired,
+    ]);
+}
 
 
 
