@@ -1050,7 +1050,7 @@ class PatientImplantController extends Controller
                         // Create new implant record
                         $implantData = [
                             'ipg_serial_number' => $validated['ipg_serial_number'],
-                            'secret_key' => $validated['secret_key']?? null,
+                            'secret_key' => $validated['secret_key'] ?? null,
                             'patient_id' => $user->id,
                             'pre_feb_2022' => false,
                             'implantation_date' => now(),
@@ -2248,26 +2248,34 @@ class PatientImplantController extends Controller
     //     ]);
     // }
     public function getWarrantyStatus(Request $request)
-{
-    $user = $request->user();
-
-    // Retrieve the latest implant for the user
-    $implant = Implant::where('patient_id', $user->id)
-        ->latest('created_at')
-        ->first();
-
-    if (!$implant) {
-        return response()->json(['message' => 'Implant not found.'], 404);
+    {
+        $user = $request->user();
+    
+        // First try to get the active implant
+        $implant = Implant::where('patient_id', $user->id)
+            ->where('active', true)
+            ->first();
+    
+        // If no active implant is found, fall back to getting the latest one
+        if (!$implant) {
+            $implant = Implant::where('patient_id', $user->id)
+                ->latest('created_at')
+                ->first();
+        }
+    
+        if (!$implant) {
+            return response()->json(['message' => 'Implant not found.'], 404);
+        }
+    
+        $warrantyExpiration = $implant->warranty_expired_at;
+        $isExpired = $warrantyExpiration ? now()->greaterThan($warrantyExpiration) : true;
+    
+        return response()->json([
+            'warranty_expiration_date' => $warrantyExpiration,
+            'is_expired' => $isExpired,
+            // 'implant_id' => $implant->id,
+        ]);
     }
-
-    $warrantyExpiration = $implant->warranty_expired_at;
-    $isExpired = $warrantyExpiration ? now()->greaterThan($warrantyExpiration) : true;
-
-    return response()->json([
-        'warranty_expiration_date' => $warrantyExpiration,
-        'is_expired' => $isExpired,
-    ]);
-}
 
 
 
@@ -2613,7 +2621,7 @@ class PatientImplantController extends Controller
                 'ipg_model_number' => $validated['ipg_model_number'],
                 'patient_id' => $implant->patient_id
             ]);
-    
+
 
             // Find and update the related device replacement record
             // Find using patient_id and status 'registered' as the new implant ID might not be directly on the replacement record yet.
